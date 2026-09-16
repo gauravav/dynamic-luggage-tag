@@ -3,7 +3,7 @@
 Encrypted, privacy-first digital luggage tags. Every traveler gets one unique visual design and a QR code — the QR stays private by default and only reveals contact info once the owner marks a bag as lost.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-concept-lightgrey.svg)]()
+[![Status](https://img.shields.io/badge/status-working%20build-brightgreen.svg)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 ---
@@ -41,40 +41,62 @@ This project follows an **open-core** model — the core logic is open source; h
 | Physical tags | Print your own | Order directly |
 | Cost | Free — your own infrastructure | Subscription or per-tag fee |
 
-Everything that differs between the two modes is controlled through configuration, not code forks — see [`config.example.yaml`](config.example.yaml).
+Everything that differs between the two modes is controlled through configuration, not code forks — see [`docs/self-hosting.md`](docs/self-hosting.md).
 
 ## Architecture
 
-- `core/` — design generator, QR/token logic, lost/safe state machine (the open-source heart of the project)
-- `api/` — REST/GraphQL backend, auth, encrypted storage layer
-- `web/` — public scan page + owner dashboard (web)
-- `mobile/` — owner app (iOS/Android)
-- `plugins/` — swappable providers: notification channels, contact-relay backends, storage backends, design generators
+- `api/` — Flask + SQLAlchemy. The open-source core lives in `api/app/core/`
+  (design generator, QR encoding, print layout); the security primitives live
+  in `api/app/security/` (envelope encryption, sessions, CSRF, audit, privacy).
+- `web/` — React + Vite + TypeScript. Owner dashboard, public scan page, and
+  the finder's side of the message relay.
+- `infra/` — PostgreSQL 16 in an [Apple container](https://github.com/apple/container),
+  TLS-only, with a private CA and an unprivileged application role.
 
-Plugin points are intentional — you can swap in your own SMS provider, storage backend, or even design-generation algorithm without touching core logic.
+Plugin points are intentional — mail provider, geolocation provider and design
+generator are each swappable through configuration rather than a fork. See
+[`docs/self-hosting.md`](docs/self-hosting.md).
 
-## Getting started (self-hosted)
+## Getting started
 
 ```bash
-git clone https://github.com/<your-org>/dynamic-luggage-tag.git
-cd dynamic-luggage-tag
-cp config.example.yaml config.yaml
-# fill in your database, notification provider, and contact-relay settings
-docker compose up
+make setup    # venv, dependencies, database container, migrations
+make dev      # API on :5001, web app on :5173
 ```
 
-Full setup docs live in [`/docs/self-hosting.md`](docs/self-hosting.md).
+`make setup` generates every secret into `.secrets/`, builds a PostgreSQL image
+with its own CA, starts it, and writes `api/.env`. Open http://localhost:5173
+and register — the default mail provider prints the verification link to the
+API's output rather than sending it.
+
+`make help` lists everything else.
+
+## Printing
+
+Every tag exports as a print-ready PDF at the standard personalised luggage tag
+size — 108.40 × 74.10 mm at the bleed, trimming to 104.40 × 70.10 mm, with a
+99.40 × 65.10 mm safety area. All four PDF boxes are declared, fonts are
+embedded, and the artwork runs to the bleed edge. Add `?guides=1` to proof the
+trim and safety lines on screen.
 
 ## Security & privacy
 
-- QR codes encode a random token, never raw personal data
-- All PII (name, address, phone, email) encrypted at rest (AES-256) and in transit (TLS)
-- Address is never shown to finders, even when a bag is marked lost
-- Contact is always relayed through the app — raw numbers/emails are never exposed
-- Scan and location logs auto-expire (default: 90 days, configurable)
-- Access to decrypted PII is logged for audit
+- QR codes encode a random 256-bit token — never a name, a number, or anything else
+- Every account has its own data key; personal fields are AES-256-GCM sealed with it,
+  and the data key is itself sealed by a key held only in the environment
+- Each ciphertext is bound to its own row and column, so one cannot be moved and decrypted
+- Deleting an account destroys that key, so anything left in a backup can never be read
+- The address is never shown to a finder, at any setting
+- Scanner IP addresses are never stored — only a day-salted hash of a truncated subnet
+- Registration, sign-in and password reset are enumeration-resistant in body and in timing
+- Sessions are server-side and revocable: `HttpOnly`, `Secure`, `SameSite=Strict`, `__Host-`
+- Optional TOTP two-factor with single-use recovery codes
+- Scan history, conversations and audit rows expire and are hard-deleted
+- Reads of decrypted personal data are written to an append-only audit log
 
-Found a security issue? Please don't open a public issue — see [`SECURITY.md`](SECURITY.md) for responsible disclosure.
+Threat model, key rotation and the production checklist:
+[`SECURITY.md`](SECURITY.md). Found a security issue? Please do not open a
+public issue — see `SECURITY.md` for disclosure.
 
 ## Contributing
 
