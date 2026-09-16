@@ -141,3 +141,20 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- Dynamic Luggage Tag ---------------------------------------------------
+# Key material and generated credentials. Losing these makes encrypted rows
+# unreadable; committing them makes the encryption pointless.
+.secrets/
+api/.env
+infra/container/certs/
+.container-data/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

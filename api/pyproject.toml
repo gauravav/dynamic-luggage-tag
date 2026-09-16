@@ -1,0 +1,27 @@
+[project]
+name = "dynamic-luggage-tag-api"
+version = "0.1.0"
+description = "Privacy-first luggage tag API"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-or-later" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "C4", "RET", "SIM"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures deliberately contain literal passwords and tokens, and
+# `x == pytest.approx(y)` reads better than the flipped form ruff prefers.
+"tests/*" = ["S105", "S106", "S107", "S311", "SIM300"]
+"migrations/*" = ["E501"]
+# Audit action names are constants like PASSWORD_CHANGED — names of events,
+# not credentials.
+"app/security/audit.py" = ["S105"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning"]
