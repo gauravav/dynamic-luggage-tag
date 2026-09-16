@@ -104,7 +104,13 @@ Swap these through configuration rather than a fork:
 - **Geolocation** — subclass `GeoProvider` in `api/app/services/geo.py`.
 - **Design generation** — `api/app/core/design.py` is pure and deterministic.
   Changing it changes future designs only; stored designs keep rendering as
-  printed. Mirror any change in `web/src/lib/design.ts`.
+  printed.
+- **Motif geometry** — `api/app/core/motif.py` works out every mark in a
+  pattern, and the print PDF draws exactly those shapes. The browser preview
+  runs a port of the same code, `web/src/lib/motif.ts`. Change Python first,
+  port the change, then run `make test`: `test_motif_parity.py` runs both
+  versions and fails if any coordinate differs. It needs Node 22.6 or later,
+  and is skipped if Node isn't available.
 
 ## Printing tags
 

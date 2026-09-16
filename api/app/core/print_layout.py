@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import io
 import logging
-import math
 import os
 from dataclasses import dataclass
 
@@ -37,6 +36,7 @@ from reportlab.pdfgen import canvas
 
 from . import qr as qr_module
 from .design import Design
+from .motif import motif_shapes
 
 log = logging.getLogger(__name__)
 
@@ -199,6 +199,46 @@ def _apply_boxes(pdf: canvas.Canvas) -> None:
 # --------------------------------------------------------------------------
 
 
+def front_layout(*, accent_band: bool) -> dict:
+    """Where everything on the front face goes, in millimetres.
+
+    Origin at the bottom-left of the bleed, y upward. Laid out from the bottom
+    up: the QR block and the name plate are fixed commitments — a shrunken
+    symbol will not scan and a clipped name defeats the tag — so they claim
+    their space first, and the motif takes whatever height is left.
+
+    A pure function so the browser preview (``web/src/lib/motif.ts``) can use
+    the same numbers and put the motif band exactly where print does.
+
+    Rectangles are ``(x, y, width, height)``.
+    """
+    safe_x = BLEED_MARGIN_MM + SAFE_MARGIN_MM
+    safe_y = safe_x
+
+    footnote_y = safe_y + 1.0
+    qr_side = min(SAFE_W_MM * 0.40, 26.0)
+    qr = (safe_x, footnote_y + 3.5, qr_side, qr_side)
+
+    subtitle_baseline = qr[1] + qr_side + 5.0
+    name_baseline = subtitle_baseline + 7.5
+    band_top = name_baseline + 6.0
+    band_height = 3.2 if accent_band else 0.0
+    rule_y = band_top + band_height + 4.0
+
+    pattern_bottom = rule_y + 3.5
+    pattern_top = BLEED_H_MM - HOLE_ZONE_MM
+    return {
+        "footnote_y": footnote_y,
+        "qr": qr,
+        "subtitle_baseline": subtitle_baseline,
+        "name_baseline": name_baseline,
+        "band": (safe_x, band_top, SAFE_W_MM, band_height),
+        "rule_y": rule_y,
+        "rule": (safe_x, safe_x + SAFE_W_MM),
+        "pattern": (0.0, pattern_bottom, BLEED_W_MM, pattern_top - pattern_bottom),
+    }
+
+
 def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
     """Front face: motif, name plate, QR symbol.
 
@@ -217,21 +257,16 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
     pdf.setFillColor(HexColor(design.field))
     pdf.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
 
-    # --- reserve the bottom stack ---------------------------------------
-    footnote_y = SAFE.y + 1.0 * mm
-    qr_side = min(SAFE.width * 0.40, 26 * mm)
-    qr_box = Box(SAFE.x, footnote_y + 3.5 * mm, qr_side, qr_side)
+    layout = front_layout(accent_band=design.accent_band)
+    footnote_y = layout["footnote_y"] * mm
+    qr_box = Box(*(value * mm for value in layout["qr"]))
+    subtitle_baseline = layout["subtitle_baseline"] * mm
+    name_baseline = layout["name_baseline"] * mm
+    band_top = layout["band"][1] * mm
+    band_height = layout["band"][3] * mm
+    rule_y = layout["rule_y"] * mm
 
-    subtitle_baseline = qr_box.top + 5.0 * mm
-    name_baseline = subtitle_baseline + 7.5 * mm
-    band_top = name_baseline + 6.0 * mm
-    band_height = 3.2 * mm if design.accent_band else 0.0
-    rule_y = band_top + band_height + 4.0 * mm
-
-    # --- motif fills everything above the rule --------------------------
-    pattern_top = PAGE_H - HOLE_ZONE_MM * mm
-    pattern = Box(0, rule_y + 3.5 * mm, PAGE_W, pattern_top - (rule_y + 3.5 * mm))
-    _draw_motif(pdf, pattern, design)
+    _draw_motif(pdf, Box(*(value * mm for value in layout["pattern"])), design)
 
     pdf.setStrokeColor(ink)
     pdf.setLineWidth(0.5)
@@ -292,6 +327,13 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
 
 
 def _draw_back(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
+    """Back face: finder instructions above a second QR symbol.
+
+    Laid out like the front: the QR block is reserved first, from the bottom
+    of the safety box, and the instructions must fit above it. If they would
+    not, the type steps down rather than letting a line run into the quiet
+    zone — a symbol with text over its quiet zone may not scan.
+    """
     _apply_boxes(pdf)
     design = face.design
     ink = HexColor(design.ink)
@@ -304,17 +346,10 @@ def _draw_back(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
     strip = Box(0, PAGE_H - HOLE_ZONE_MM * mm - 12 * mm, PAGE_W, 12 * mm)
     _draw_motif(pdf, strip, design)
 
-    cursor = _draw_fitted(
-        pdf,
-        "If you found this bag",
-        font=FONT_BOLD,
-        max_size=11.5,
-        min_size=9,
-        x=SAFE.x,
-        y=strip.y - 9 * mm,
-        max_width=SAFE.width,
-        color=ink,
-    )
+    footer_y = SAFE.y
+    qr_side = min(SAFE.width * 0.40, 23 * mm)
+    qr_box = Box(SAFE.cx - qr_side / 2.0, footer_y + 5 * mm, qr_side, qr_side)
+    floor = qr_box.top + 4 * mm
 
     steps = (
         "Scan the code on the front.",
@@ -322,31 +357,53 @@ def _draw_back(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
         "If they did, you can message them without sharing your number.",
         "If they did not, no personal details are shown at all.",
     )
+    heading_top = strip.y - 9 * mm
+    indent = 4.5 * mm
+
+    # Largest size at which heading and steps clear the QR block.
+    for size in (7.2, 6.9, 6.6, 6.3, 6.0):
+        leading = size * 1.28
+        needed = 11.5 * 1.2 + 3 * mm
+        for step in steps:
+            lines = len(_wrap(step, FONT_REGULAR, size, SAFE.width - indent))
+            needed += lines * leading + 2 * mm
+        if heading_top - needed >= floor:
+            break
+
+    cursor = _draw_fitted(
+        pdf,
+        "If you found this bag",
+        font=FONT_BOLD,
+        max_size=11.5,
+        min_size=9,
+        x=SAFE.x,
+        y=heading_top,
+        max_width=SAFE.width,
+        color=ink,
+    )
     cursor -= 3 * mm
     for index, step in enumerate(steps, start=1):
         pdf.setFillColor(HexColor(design.accent))
-        pdf.setFont(FONT_BOLD, 7.2)
+        pdf.setFont(FONT_BOLD, size)
         pdf.drawString(SAFE.x, cursor, str(index))
         cursor = _draw_wrapped(
             pdf,
             step,
             font=FONT_REGULAR,
-            size=7.2,
-            leading=9.2,
-            x=SAFE.x + 4.5 * mm,
+            size=size,
+            leading=leading,
+            x=SAFE.x + indent,
             top=cursor,
-            max_width=SAFE.width - 4.5 * mm,
+            max_width=SAFE.width - indent,
             color=ink,
         )
         cursor -= 2 * mm
 
-    qr_side = min(SAFE.width * 0.44, 25 * mm)
-    qr_box = Box(SAFE.cx - qr_side / 2.0, SAFE.y + 8 * mm, qr_side, qr_side)
     _draw_qr(pdf, qr_box, face.scan_url, ink)
 
     pdf.setFillColor(muted)
     pdf.setFont(FONT_REGULAR, 5.4)
-    pdf.drawCentredString(SAFE.cx, SAFE.y, "dynamic luggage tag")
+    pdf.drawCentredString(SAFE.cx, footer_y, "dynamic luggage tag")
 
     _punch_hole(pdf, design)
     if guides:
@@ -409,99 +466,54 @@ def _draw_qr(pdf: canvas.Canvas, box: Box, url: str, color: Color) -> None:
 
 
 def _draw_motif(pdf: canvas.Canvas, box: Box, design: Design) -> None:
-    """Paints the traveller's motif into `box`, clipped to it."""
+    """Paints the traveller's motif into `box`, clipped to it.
+
+    The geometry comes from ``core/motif.py``, which the browser mirrors in
+    ``web/src/lib/motif.ts``. This function only converts millimetres to
+    points and draws — it must not decide where a mark goes, or print and
+    screen drift apart again.
+    """
     pdf.saveState()
     path = pdf.beginPath()
     path.rect(box.x, box.y, box.width, box.height)
     pdf.clipPath(path, stroke=0, fill=0)
 
-    ink = HexColor(design.ink)
-    accent = HexColor(design.accent)
-    pdf.setFillColor(_tint(HexColor(design.field), ink, 0.12))
-    pdf.rect(box.x, box.y, box.width, box.height, stroke=0, fill=1)
+    def px(value: float) -> float:
+        return box.x + value * mm
 
-    period = box.width / design.density
-    weight = (design.weight / 10.0) * mm
-    phase = (design.offset / 100.0) * period
+    def py(value: float) -> float:
+        return box.y + value * mm
 
-    if design.motif == "dot":
-        radius = min(period * 0.24, weight * 1.8)
-        rows = max(2, int(box.height / period) + 2)
-        for row in range(rows):
-            y = box.y + row * period + phase * 0.5
-            stagger = (period / 2.0) if row % 2 else 0.0
-            for col in range(-1, design.density + 2):
-                x = box.x + col * period + stagger + phase
-                pdf.setFillColor(accent if (row + col) % 5 == 0 else ink)
-                pdf.circle(x, y, radius, stroke=0, fill=1)
-
-    elif design.motif == "weave":
-        _diagonal_lines(pdf, box, 45, period, weight, ink)
-        _diagonal_lines(pdf, box, -45, period, weight * 0.55, accent)
-
-    elif design.motif == "diagonal":
-        angle = max(20, min(70, design.angle or 60))
-        _diagonal_lines(pdf, box, angle, period, weight, ink)
-
-    elif design.motif == "chevron":
-        pdf.setStrokeColor(ink)
-        pdf.setLineWidth(weight)
-        pdf.setLineCap(1)
-        rows = max(2, int(box.height / period) + 2)
-        for row in range(rows):
-            y = box.y + row * period
-            zigzag = pdf.beginPath()
-            x = box.x - period
-            zigzag.moveTo(x, y)
-            up = True
-            while x < box.right + period:
-                x += period / 2.0
-                zigzag.lineTo(x, y + (period / 2.0 if up else 0.0))
-                up = not up
-            pdf.drawPath(zigzag, stroke=1, fill=0)
-
-    elif design.motif == "grid":
-        pdf.setStrokeColor(ink)
-        pdf.setLineWidth(weight * 0.6)
-        for col in range(design.density + 2):
-            x = box.x + col * period + phase
-            pdf.line(x, box.y, x, box.top)
-        for row in range(int(box.height / period) + 2):
-            y = box.y + row * period
-            pdf.line(box.x, y, box.right, y)
-
-    else:  # ladder
-        rungs = max(3, int(box.height / (period * 0.7)))
-        for index in range(rungs):
-            y = box.y + index * (box.height / rungs)
-            inset = (index % 3) * (box.width * 0.06)
-            pdf.setFillColor(accent if index % 4 == 0 else ink)
-            pdf.rect(box.x + inset, y, box.width - inset * 2, weight, stroke=0, fill=1)
+    for shape in motif_shapes(design, box.width / mm, box.height / mm):
+        kind = shape["kind"]
+        if kind == "rect":
+            pdf.setFillColor(Color(*shape["fill"]))
+            pdf.rect(
+                px(shape["x"]),
+                py(shape["y"]),
+                shape["width"] * mm,
+                shape["height"] * mm,
+                stroke=0,
+                fill=1,
+            )
+        elif kind == "circle":
+            pdf.setFillColor(Color(*shape["fill"]))
+            pdf.circle(px(shape["cx"]), py(shape["cy"]), shape["r"] * mm, stroke=0, fill=1)
+        else:
+            pdf.setStrokeColor(Color(*shape["stroke"]))
+            pdf.setLineWidth(shape["strokeWidth"] * mm)
+            pdf.setLineCap(1 if shape["cap"] == "round" else 0)
+            if kind == "line":
+                pdf.line(px(shape["x1"]), py(shape["y1"]), px(shape["x2"]), py(shape["y2"]))
+            else:  # polyline
+                (first_x, first_y), *rest = shape["points"]
+                line = pdf.beginPath()
+                line.moveTo(px(first_x), py(first_y))
+                for x, y in rest:
+                    line.lineTo(px(x), py(y))
+                pdf.drawPath(line, stroke=1, fill=0)
 
     pdf.restoreState()
-
-
-def _diagonal_lines(
-    pdf: canvas.Canvas, box: Box, angle_deg: float, period: float, weight: float, color: Color
-) -> None:
-    """Evenly spaced parallel lines at `angle_deg`, overshooting the clip box.
-
-    Spacing is stepped along the axis perpendicular to the lines, so the gap
-    stays `period` at any angle rather than shearing as the angle changes.
-    """
-    pdf.setStrokeColor(color)
-    pdf.setLineWidth(weight)
-    radians = math.radians(angle_deg)
-    span = abs(box.width * math.sin(radians)) + abs(box.height * math.cos(radians))
-    steps = int(span / period) + 3
-    dx = math.cos(radians) * (box.width + box.height)
-    dy = math.sin(radians) * (box.width + box.height)
-    nx = -math.sin(radians) * period
-    ny = math.cos(radians) * period
-    for index in range(-steps, steps + 1):
-        ox = box.cx + nx * index
-        oy = box.y + box.height / 2.0 + ny * index
-        pdf.line(ox - dx / 2.0, oy - dy / 2.0, ox + dx / 2.0, oy + dy / 2.0)
 
 
 def _draw_fitted(
@@ -576,14 +588,6 @@ def _muted(color: Color) -> Color:
         min(1.0, color.red + (1 - color.red) * 0.42),
         min(1.0, color.green + (1 - color.green) * 0.42),
         min(1.0, color.blue + (1 - color.blue) * 0.42),
-    )
-
-
-def _tint(base: Color, toward: Color, amount: float) -> Color:
-    return Color(
-        base.red + (toward.red - base.red) * amount,
-        base.green + (toward.green - base.green) * amount,
-        base.blue + (toward.blue - base.blue) * amount,
     )
 
 
