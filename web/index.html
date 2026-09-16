@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      The Content-Security-Policy is delivered as a response header, not a
+      <meta> tag — see the csp() plugin in vite.config.ts and the production
+      snippet in docs/self-hosting.md. A meta policy silently ignores
+      frame-ancestors, and it is applied mid-parse, which blocks the inline
+      module preamble Vite injects during development.
+    -->
+    <meta name="referrer" content="no-referrer" />
+    <!-- Scan pages carry a token in the URL; keep them out of search indexes. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#FAF6EC" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap"
+      rel="stylesheet"
+    />
+
+    <title>Dynamic Luggage Tag</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

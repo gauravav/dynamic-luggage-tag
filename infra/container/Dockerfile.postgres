@@ -1,0 +1,14 @@
+# PostgreSQL 16 hardened for Dynamic Luggage Tag.
+#
+# Certificates are baked in (rather than bind-mounted) so the private key keeps
+# 0600/postgres ownership — Postgres refuses to start otherwise, and virtiofs
+# bind mounts do not preserve that ownership from macOS.
+FROM postgres:16-alpine
+
+COPY certs/server.crt /etc/dlt/tls/server.crt
+COPY certs/server.key /etc/dlt/tls/server.key
+COPY pg_hba.conf      /etc/dlt/pg_hba.conf
+
+RUN chown postgres:postgres /etc/dlt/tls/server.crt /etc/dlt/tls/server.key /etc/dlt/pg_hba.conf \
+ && chmod 0644 /etc/dlt/tls/server.crt /etc/dlt/pg_hba.conf \
+ && chmod 0600 /etc/dlt/tls/server.key
