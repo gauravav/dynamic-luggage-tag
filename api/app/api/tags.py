@@ -5,16 +5,18 @@ from __future__ import annotations
 import uuid
 
 from flask import Blueprint, Response, jsonify, request
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ..core import design as design_module
 from ..core import print_layout, qr
 from ..errors import ApiError
 from ..extensions import app_config, db_session, limiter
 from ..models import TAG_STATUS_LOST, TAG_STATUS_SAFE, Tag, utcnow
-from ..schemas import TagCreateIn, TagUpdateIn, parse
+from ..schemas import NfcBindIn, NfcChipIn, TagCreateIn, TagUpdateIn, parse
 from ..security import audit
 from ..security.authz import login_required, owned_tag, require_user, user_crypto
-from ..security.crypto import hash_token, new_token
+from ..security.crypto import blind_index, hash_token, new_token
 from ..security.pii import UserCrypto
 
 bp = Blueprint("tags", __name__, url_prefix="/tags")
@@ -39,6 +41,8 @@ def _serialize(tag: Tag, crypto: UserCrypto, *, include_token: bool = False) -> 
         "scan_count": tag.scan_count,
         "last_scan_at": tag.last_scan_at.isoformat() if tag.last_scan_at else None,
         "created_at": tag.created_at.isoformat(),
+        "nfc_linked": tag.nfc_uid_bidx is not None,
+        "nfc_linked_at": tag.nfc_bound_at.isoformat() if tag.nfc_bound_at else None,
     }
     if include_token:
         # Only on the detail view, so a list response never sprays scan URLs
@@ -209,6 +213,131 @@ def rotate_token(tag_id: str):
     )
     db.commit()
     return jsonify({"tag": _serialize(tag, crypto, include_token=True), "threads_closed": closed})
+
+
+def _nfc_index(serial: str) -> bytes:
+    return blind_index(app_config().blind_index_key, "nfc_uid", serial)
+
+
+@bp.post("/<tag_id>/nfc")
+@login_required
+@limiter.limit("30 per hour")
+def bind_nfc(tag_id: str):
+    """Links a physical NFC chip to this tag, just before the page writes to it.
+
+    This is what makes the site refuse to write a chip for anyone but its
+    owner. It cannot stop a generic NFC app from overwriting an unlocked chip:
+    that protection would need a chip password, which browsers cannot set.
+    """
+    payload = parse(request, NfcBindIn)
+    tag = owned_tag(tag_id)
+    user = require_user()
+    crypto = user_crypto()
+    db = db_session()
+    config = app_config()
+
+    index = _nfc_index(payload.serial)
+    holder = db.scalar(select(Tag).where(Tag.nfc_uid_bidx == index, Tag.id != tag.id))
+
+    if holder is not None and holder.user_id != user.id:
+        raise ApiError(
+            "nfc_chip_claimed",
+            "This NFC tag is registered to another account, so it can't be written from here.",
+            status=409,
+        )
+    if not payload.replace:
+        if holder is not None:
+            other = crypto.read_tag(holder, "label") or "another of your tags"
+            raise ApiError(
+                "nfc_chip_on_other_tag",
+                f"This NFC tag is currently linked to “{other}”. Move it to this tag instead?",
+                status=409,
+            )
+        if tag.nfc_uid_bidx is not None and tag.nfc_uid_bidx != index:
+            raise ApiError(
+                "nfc_tag_has_other_chip",
+                "This tag is already linked to a different NFC sticker. Replace it with this one?",
+                status=409,
+            )
+
+    moved = holder is not None
+    if holder is not None:
+        holder.nfc_uid_bidx = None
+        holder.nfc_bound_at = None
+        # Flush first, or the unique index sees both rows holding the chip.
+        db.flush()
+
+    tag.nfc_uid_bidx = index
+    tag.nfc_bound_at = utcnow()
+    tag.updated_at = utcnow()
+    audit.record(
+        db,
+        audit.TAG_NFC_BOUND,
+        config=config,
+        actor_user_id=user.id,
+        subject_user_id=user.id,
+        tag_id=tag.id,
+        actor_type="user",
+        detail={"moved_from_other_tag": moved},
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # Another account linked the same chip between our check and commit.
+        db.rollback()
+        raise ApiError(
+            "nfc_chip_claimed",
+            "This NFC tag is registered to another account, so it can't be written from here.",
+            status=409,
+        ) from exc
+    return jsonify({"tag": _serialize(tag, crypto, include_token=True)})
+
+
+@bp.delete("/<tag_id>/nfc")
+@login_required
+def unbind_nfc(tag_id: str):
+    tag = owned_tag(tag_id)
+    user = require_user()
+    db = db_session()
+
+    if tag.nfc_uid_bidx is not None:
+        tag.nfc_uid_bidx = None
+        tag.nfc_bound_at = None
+        tag.updated_at = utcnow()
+        audit.record(
+            db,
+            audit.TAG_NFC_UNBOUND,
+            config=app_config(),
+            actor_user_id=user.id,
+            subject_user_id=user.id,
+            tag_id=tag.id,
+            actor_type="user",
+        )
+        db.commit()
+    return jsonify({"tag": _serialize(tag, user_crypto(), include_token=True)})
+
+
+@bp.post("/nfc/lookup")
+@login_required
+@limiter.limit("60 per hour")
+def lookup_nfc():
+    """Tells the signed-in owner who a chip they are holding is registered to.
+
+    A chip on someone else's tag is reported only as "other": no id, no label.
+    The caller has to be physically holding the chip to learn even that much.
+    """
+    payload = parse(request, NfcChipIn)
+    user = require_user()
+    holder = db_session().scalar(
+        select(Tag).where(Tag.nfc_uid_bidx == _nfc_index(payload.serial), Tag.revoked_at.is_(None))
+    )
+    if holder is None:
+        return jsonify({"registered": "none"})
+    if holder.user_id != user.id:
+        return jsonify({"registered": "other"})
+    return jsonify(
+        {"registered": "mine", "tag": _serialize(holder, user_crypto(), include_token=True)}
+    )
 
 
 @bp.delete("/<tag_id>")

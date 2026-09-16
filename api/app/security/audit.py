@@ -45,6 +45,8 @@ TAG_UPDATED = "tag.updated"
 TAG_STATUS_CHANGED = "tag.status.changed"
 TAG_TOKEN_ROTATED = "tag.token.rotated"
 TAG_DELETED = "tag.deleted"
+TAG_NFC_BOUND = "tag.nfc.bound"
+TAG_NFC_UNBOUND = "tag.nfc.unbound"
 
 # Public surface
 TAG_SCANNED = "scan.recorded"

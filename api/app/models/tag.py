@@ -43,6 +43,13 @@ class Tag(Base):
     token_enc: Mapped[bytes] = ciphertext(nullable=False)
     token_version: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
 
+    # The NFC sticker this tag was written to, identified by the chip's factory
+    # serial number. Stored as a keyed hash: the serial is a stable hardware
+    # identifier, and a database dump should not be able to match it to a
+    # sticker in the wild. Unique, so one chip belongs to one tag at a time.
+    nfc_uid_bidx: Mapped[bytes | None] = digest(unique=True, nullable=True)
+    nfc_bound_at: Mapped[dt.datetime | None] = timestamp()
+
     # "Blue carry-on" — the owner's own words, so it is treated as personal.
     label_enc: Mapped[bytes | None] = ciphertext()
 
