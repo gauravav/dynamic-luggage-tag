@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page tour — Dynamic Luggage Tag</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf6ec; --paper-deep: #f0e7d2; --paper-line: #dcd0af;
+    --ink: #242017; --ink-soft: #5b5748; --ink-faint: #8b8676;
+    --forest: #2f5d4e; --forest-deep: #1f4034; --forest-wash: #e4efea;
+    --brick: #9c3b2a; --brick-wash: #f5e1dc; --brass: #8c6221; --brass-wash: #f6efde;
+    --white: #fff;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 var(--sans); }
+  a { color: var(--forest-deep); }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.2; margin: 0; }
+
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1240px; margin: 0 auto; }
+  nav.toc {
+    position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+    padding: 28px 18px 40px 24px; border-right: 1px solid var(--paper-line);
+  }
+  .toc .brand { font-family: var(--serif); font-weight: 600; font-size: 16px; display: flex; gap: 9px; align-items: center; margin-bottom: 22px; text-decoration: none; color: var(--ink); }
+  .toc .mark { width: 18px; height: 23px; border-radius: 3px; border: 1px solid var(--paper-line);
+    background: repeating-linear-gradient(135deg, var(--forest) 0 3px, transparent 3px 7px), var(--paper-deep); }
+  .toc h4 { font: 500 12px var(--mono); color: var(--brass); text-transform: lowercase; margin: 20px 0 6px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+  .toc li a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: 14px; }
+  .toc li a:hover { background: var(--paper-deep); color: var(--ink); }
+
+  main { padding: 44px 40px 100px; min-width: 0; }
+  .kicker { font: 500 13px var(--mono); color: var(--brass); margin-bottom: 10px; }
+  header.intro h1 { font-size: clamp(30px, 4.4vw, 44px); margin-bottom: 14px; }
+  .lede { font-size: 18px; color: var(--ink-soft); max-width: 66ch; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 28px 0 10px; }
+  .fact { background: var(--white); border: 1px solid var(--paper-line); border-radius: 12px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-soft); }
+  .fact strong { display: block; color: var(--ink); font-family: var(--serif); font-size: 16px; margin-bottom: 4px; }
+
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 22px 0 0; font-size: 13.5px; }
+  .flow span { background: var(--white); border: 1px solid var(--paper-line); border-radius: 20px; padding: 5px 12px; }
+  .flow i { color: var(--ink-faint); font-style: normal; }
+
+  .group { margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--paper-line); }
+  .group > h2 { font-size: clamp(24px, 3vw, 30px); margin-bottom: 8px; }
+  .group > p { color: var(--ink-soft); max-width: 70ch; }
+
+  section.page { margin-top: 44px; }
+  section.page > h3 { font-size: 22px; margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .chip { font: 500 12.5px var(--mono); padding: 4px 10px; border-radius: 6px; background: var(--paper-deep); color: var(--ink-soft); }
+  .chip.route { background: var(--ink); color: var(--paper); }
+  .chip.public { background: var(--brass-wash); color: var(--brass); }
+  .chip.owner { background: var(--forest-wash); color: var(--forest-deep); }
+  .chip.finder { background: var(--brick-wash); color: var(--brick); }
+
+  .split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+  .split.narrow { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
+  figure { margin: 0; }
+  figure a { display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--paper-line);
+    box-shadow: 0 14px 30px rgba(36, 32, 23, 0.10); background: var(--white); }
+  figure img { display: block; width: 100%; height: auto; }
+  figure.tall a { max-height: 820px; overflow-y: auto; }
+  figure.phone { max-width: 330px; }
+  figure.phone a { border: 8px solid var(--ink); border-radius: 26px; }
+  figure.print { max-width: 300px; }
+  figcaption { font-size: 13px; color: var(--ink-faint); margin-top: 9px; }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; }
+
+  .notes h4 { font: 600 15px var(--sans); margin: 18px 0 6px; }
+  .notes h4:first-child { margin-top: 0; }
+  .notes p, .notes li { font-size: 15px; color: var(--ink-soft); }
+  .notes ul { padding-left: 18px; margin: 6px 0; }
+  .notes li { margin-bottom: 5px; }
+  .notes code, p code, li code { font: 500 13px var(--mono); background: var(--paper-deep); padding: 1px 5px; border-radius: 4px; color: var(--ink); overflow-wrap: anywhere; }
+  .privacy { background: var(--forest-wash); border-left: 3px solid var(--forest); border-radius: 0 10px 10px 0; padding: 12px 16px; margin-top: 16px; }
+  .privacy h4 { color: var(--forest-deep); margin-top: 0; }
+  .privacy p, .privacy li { color: var(--forest-deep); }
+  .warn { background: var(--brass-wash); border-left: 3px solid var(--brass); border-radius: 0 10px 10px 0; padding: 12px 16px; margin-top: 16px; }
+  .warn p { color: #6b4a17; margin: 0; font-size: 15px; }
+
+  table.spec { border-collapse: collapse; width: 100%; font-size: 14.5px; margin: 10px 0; }
+  table.spec th, table.spec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--paper-line); }
+  table.spec th { font-weight: 600; color: var(--ink); background: var(--paper-deep); }
+  .table-wrap { overflow-x: auto; }
+
+  footer { margin-top: 80px; padding-top: 22px; border-top: 1px solid var(--paper-line); color: var(--ink-faint); font-size: 13.5px; }
+
+  @media (max-width: 1000px) {
+    .split, .split.narrow { grid-template-columns: 1fr; }
+    figure.phone { margin: 0 auto; }
+  }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--paper-line); padding: 20px 16px; }
+    .toc ol { display: flex; flex-wrap: wrap; gap: 2px; }
+    main { padding: 32px 16px 80px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc" aria-label="Contents">
+  <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Page tour</a>
+  <h4>public site</h4>
+  <ol><li><a href="#landing">Landing</a></li><li><a href="#not-found">Not found</a></li></ol>
+  <h4>account access</h4>
+  <ol>
+    <li><a href="#register">Create an account</a></li>
+    <li><a href="#verify">Confirm your address</a></li>
+    <li><a href="#login">Sign in</a></li>
+    <li><a href="#unverified">Unconfirmed account</a></li>
+    <li><a href="#forgot">Forgot password</a></li>
+    <li><a href="#reset">Set a new password</a></li>
+  </ol>
+  <h4>owner app</h4>
+  <ol>
+    <li><a href="#dashboard">Tags</a></li>
+    <li><a href="#tag-detail">Tag detail</a></li>
+    <li><a href="#inbox">Inbox</a></li>
+    <li><a href="#settings">Settings</a></li>
+  </ol>
+  <h4>finder — scan surface</h4>
+  <ol>
+    <li><a href="#scan-safe">Scan: marked safe</a></li>
+    <li><a href="#scan-lost">Scan: reported lost</a></li>
+    <li><a href="#message-sent">Message sent</a></li>
+    <li><a href="#relay">Relayed conversation</a></li>
+    <li><a href="#scan-unknown">Unregistered tag</a></li>
+  </ol>
+  <h4>outside the browser</h4>
+  <ol><li><a href="#emails">Emails</a></li><li><a href="#print">Printed tag</a></li></ol>
+</nav>
+
+<main id="top">
+<header class="intro">
+  <div class="kicker">docs / page tour</div>
+  <h1>Every page, and what it does</h1>
+  <p class="lede">A walk through each screen of Dynamic Luggage Tag — who sees it, what is on it, how it behaves, and what it deliberately keeps private. Screenshots are real captures of the running app.</p>
+
+  <div class="facts">
+    <div class="fact"><strong>Three audiences</strong>The <em>owner</em> who signs in, the <em>finder</em> who scans a bag with no account, and anyone landing on the public site.</div>
+    <div class="fact"><strong>One rule</strong>A finder sees nothing personal unless the owner has marked that bag lost — and never the address, at any setting.</div>
+    <div class="fact"><strong>Demo data</strong>“Rosa Fernandez” and every address, message and tag here are fictional, created through the real API for these captures.</div>
+    <div class="fact"><strong>Capture sizes</strong>Owner and account pages at 1280 px wide. Finder pages at 390 px — a phone, because that is what a finder is holding.</div>
+  </div>
+
+  <div class="flow" aria-label="Typical journey">
+    <span>Create an account</span><i>→</i><span>Confirm by email</span><i>→</i><span>Add a tag</span><i>→</i><span>Print it</span><i>→</i><span>Bag goes missing</span><i>→</i><span>Mark it lost</span><i>→</i><span>Finder scans</span><i>→</i><span>Relayed messages</span>
+  </div>
+</header>
+
+<!-- ===================================================================== -->
+<div class="group">
+  <h2>Public site</h2>
+  <p>What anyone sees before signing in.</p>
+
+  <section class="page" id="landing">
+    <h3>Landing</h3>
+    <div class="chips"><span class="chip route">/</span><span class="chip public">anyone</span></div>
+    <div class="split">
+      <figure class="tall"><a href="screenshots/01-landing.png" target="_blank" rel="noopener"><img src="screenshots/01-landing.png" alt="Landing page with the headline, a sample tag, three example designs, the four-step explanation and privacy cards" loading="lazy" width="1280" height="2827"></a>
+        <figcaption>Full page, scrollable. Click any screenshot to open it at full size.</figcaption></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <ul>
+          <li><strong>Hero</strong> — the product in one line: <em>Share your name, not your address</em>, beside a tilted sample tag drawn by the same renderer the dashboard uses.</li>
+          <li><strong>The tag</strong> — three sample designs (forest weave, brick dot, brass diagonal) showing that the pattern belongs to the traveller, not the suitcase.</li>
+          <li><strong>How it works</strong> — four numbered steps from sign-up to a found bag.</li>
+          <li><strong>Privacy, by default</strong> — four cards: per-account encryption keys, a QR that holds only a random token, masked contact, expiring location logs.</li>
+          <li><strong>Call to action</strong> — create an account, and a note that the code is AGPL-3.0 for self-hosting.</li>
+        </ul>
+        <h4>How it behaves</h4>
+        <p>Static. The header swaps <em>Sign in / Create an account</em> for <em>Tags / Inbox / Settings / Sign out</em> once a session exists. The sample tags are fixed demo designs, not generated from anyone's data.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="not-found">
+    <h3>Not found</h3>
+    <div class="chips"><span class="chip route">any unknown route</span><span class="chip public">anyone</span></div>
+    <div class="split">
+      <figure><a href="screenshots/25-not-found.png" target="_blank" rel="noopener"><img src="screenshots/25-not-found.png" alt="404 page" loading="lazy" width="1280" height="900"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p>A short “That page is not here” with a hint that the link may be old or the tag rotated or deleted, and a way back to the start.</p>
+        <h4>How it behaves</h4>
+        <p>Client-side catch-all inside the site layout. The scan and relay routes have their own not-found states (see <a href="#scan-unknown">Unregistered tag</a>) so a finder never lands on marketing chrome.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===================================================================== -->
+<div class="group">
+  <h2>Account access</h2>
+  <p>Sign-up, confirmation, sign-in and recovery. Every one of these is built so that the response never reveals whether an email address has an account — this product exists to keep a traveller's identity private, so an endpoint that confirms “yes, this person uses it” would undermine the whole thing.</p>
+
+  <section class="page" id="register">
+    <h3>Create an account</h3>
+    <div class="chips"><span class="chip route">/register</span><span class="chip public">anyone</span><span class="chip">POST /api/v1/auth/register</span></div>
+    <div class="pair">
+      <figure><a href="screenshots/02-register.png" target="_blank" rel="noopener"><img src="screenshots/02-register.png" alt="Registration form with email, name and password" loading="lazy" width="1280" height="900"></a><figcaption>The form.</figcaption></figure>
+      <figure><a href="screenshots/03-register-sent.png" target="_blank" rel="noopener"><img src="screenshots/03-register-sent.png" alt="Confirmation screen asking the user to check their inbox" loading="lazy" width="1280" height="900"></a><figcaption>After submitting.</figcaption></figure>
+    </div>
+    <div class="notes" style="margin-top:20px">
+      <h4>What is on it</h4>
+      <ul>
+        <li><strong>Email address</strong> — required.</li>
+        <li><strong>Name</strong> — optional; the hint explains it is shown to a finder only when a bag is reported lost.</li>
+        <li><strong>Password</strong> — at least 12 characters. No character-class rules; instead it rejects common passwords (including padded ones like <code>password1234</code>), long runs like <code>abcdefgh</code>, too few distinct characters, and anything containing the email address or name.</li>
+      </ul>
+      <h4>How it behaves</h4>
+      <ul>
+        <li>Field errors appear under the matching input.</li>
+        <li>On success the form is replaced by <em>Confirm your email address</em>. The account exists but cannot sign in until the link is followed.</li>
+        <li>Limited to 5 attempts an hour and 20 a day per client.</li>
+      </ul>
+      <div class="privacy">
+        <h4>Privacy</h4>
+        <p>The confirmation screen is identical whether the address is new, already registered, or registered but never confirmed. What differs is only the email: a new address gets a confirmation link; an unconfirmed account gets a <em>fresh</em> link; a confirmed account gets “someone tried to sign up with your address”. Only the address holder learns which case applied. A second registration never changes the password on an existing account — otherwise anyone could register someone else's address and take the account over when the real owner clicked the link.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="verify">
+    <h3>Confirm your address</h3>
+    <div class="chips"><span class="chip route">/verify?token=…</span><span class="chip public">from the email link</span><span class="chip">POST /api/v1/auth/verify-email</span></div>
+    <div class="split">
+      <figure><a href="screenshots/07-verify-invalid.png" target="_blank" rel="noopener"><img src="screenshots/07-verify-invalid.png" alt="Verification failure page saying the link did not work" loading="lazy" width="1280" height="900"></a><figcaption>An expired or already-used link. A valid one never renders a page — it signs you in and moves straight to your tags.</figcaption></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p>A brief “Confirming…” spinner, then either a redirect to <a href="#dashboard">Tags</a> or the failure state shown: <em>This link did not work</em>, why links expire, and a way to start again.</p>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>Links last 24 hours and work once. Requesting a new one invalidates the old.</li>
+          <li>Following a valid link marks the address confirmed <em>and</em> signs you in, so there is no second password prompt.</li>
+          <li>The request is sent exactly once even under React's development double-render, because a second attempt with a single-use token would show a false failure.</li>
+        </ul>
+        <div class="privacy"><h4>Security</h4><p>Only an HMAC of the token is stored, so a copy of the database contains no working confirmation links.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="login">
+    <h3>Sign in</h3>
+    <div class="chips"><span class="chip route">/login</span><span class="chip public">anyone</span><span class="chip">POST /api/v1/auth/login</span></div>
+    <div class="split">
+      <figure><a href="screenshots/04-login.png" target="_blank" rel="noopener"><img src="screenshots/04-login.png" alt="Sign-in form" loading="lazy" width="1280" height="900"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p>Email, password, <em>Sign in</em>, and links to <a href="#forgot">Forgot your password?</a> and <a href="#register">Create an account</a>.</p>
+        <h4>How it behaves</h4>
+        <ul>
+          <li><strong>Two-factor</strong> — if the account has an authenticator set up, a correct password reveals a code field in place, with a switch to use a one-time recovery code instead. Email and password stay filled in; only the code is cleared after a mistake.</li>
+          <li><strong>Lockout</strong> — 8 wrong attempts lock the account for 15 minutes.</li>
+          <li><strong>Rate limit</strong> — 10 attempts per 15 minutes and 50 a day per client.</li>
+          <li>After signing in you return to the page you were trying to reach, or <a href="#dashboard">Tags</a>.</li>
+        </ul>
+        <div class="privacy">
+          <h4>Privacy and security</h4>
+          <ul>
+            <li>An unknown address, a wrong password and a locked account all return the same “That email or password is not correct.” The unknown-address path also runs a full Argon2 check against a throwaway hash, so the <em>time</em> taken doesn't give the answer away either.</li>
+            <li>The session lives in a <code>HttpOnly</code>, <code>SameSite=Strict</code> cookie that page scripts cannot read, backed by a server-side record that can be revoked.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="unverified">
+    <h3>Sign in with an unconfirmed account</h3>
+    <div class="chips"><span class="chip route">/login</span><span class="chip public">account not yet confirmed</span><span class="chip">POST /api/v1/auth/verify-email/resend</span></div>
+    <div class="pair">
+      <figure><a href="screenshots/05-login-unverified.png" target="_blank" rel="noopener"><img src="screenshots/05-login-unverified.png" alt="Sign-in error asking to confirm the email address, with a resend link below" loading="lazy" width="1280" height="900"></a><figcaption>The error, with the way out directly beneath it.</figcaption></figure>
+      <figure><a href="screenshots/06-login-resend-cooldown.png" target="_blank" rel="noopener"><img src="screenshots/06-login-resend-cooldown.png" alt="After resending: a confirmation note and a countdown until another link can be requested" loading="lazy" width="1280" height="900"></a><figcaption>After clicking resend: a ten-minute countdown.</figcaption></figure>
+    </div>
+    <div class="notes" style="margin-top:20px">
+      <h4>What is on it</h4>
+      <p>With the correct password for an account that was never confirmed: <em>Confirm your email address first. Check your inbox for the link.</em> Directly underneath is <em>Resend the confirmation link</em>. After clicking, the note says a new link is on its way (and to check spam), and the button becomes <em>You can request another link in 9:58</em>, counting down.</p>
+      <h4>How it behaves</h4>
+      <ul>
+        <li><strong>One link every 10 minutes, per account.</strong> The limit is enforced by the server, so reloading, opening a new tab, switching browser or changing network does not reset it. The sign-up email counts toward the same window.</li>
+        <li>The countdown survives a page reload (the deadline is kept in browser storage as a bare timestamp — no address).</li>
+        <li>This page exists because without it an unconfirmed account would be a dead end: sign-in refuses it, and there would be no other way to get another link.</li>
+      </ul>
+      <div class="privacy"><h4>Privacy</h4><p>The resend request answers identically — always “a new link is on its way if that address is waiting to be confirmed”, always a 600-second wait — whether an email was sent, was throttled, the account is already confirmed, or no account exists. That is why the countdown starts regardless: the browser genuinely isn't told which case it was.</p></div>
+    </div>
+  </section>
+
+  <section class="page" id="forgot">
+    <h3>Forgot password</h3>
+    <div class="chips"><span class="chip route">/forgot</span><span class="chip public">anyone</span><span class="chip">POST /api/v1/auth/password/reset-request</span></div>
+    <div class="split">
+      <figure><a href="screenshots/08-forgot.png" target="_blank" rel="noopener"><img src="screenshots/08-forgot.png" alt="Forgot-password form with an email field" loading="lazy" width="1280" height="900"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p>One email field and <em>Send reset link</em>. Afterwards: “If that address has an account… a reset link is on its way. It is valid for 30 minutes and can be used once.”</p>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>5 requests an hour, 15 a day per client.</li>
+          <li>Even a network error shows the same “on its way” screen — surfacing a difference would reintroduce exactly the signal the design removes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="reset">
+    <h3>Set a new password</h3>
+    <div class="chips"><span class="chip route">/reset?token=…</span><span class="chip public">from the email link</span><span class="chip">POST /api/v1/auth/password/reset</span></div>
+    <div class="split">
+      <figure><a href="screenshots/09-reset.png" target="_blank" rel="noopener"><img src="screenshots/09-reset.png" alt="Set new password form with a notice that all devices will be signed out" loading="lazy" width="1280" height="900"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p>A single <em>New password</em> field, and a notice that every signed-in device will be signed out. Without a token in the link, this route shows the <a href="#forgot">Forgot password</a> form instead.</p>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>The same password rules as registration.</li>
+          <li>On success: the lock and failed-attempt count are cleared, <strong>every session is revoked</strong> (a reset is recovery from losing control of the account), and you are sent to <a href="#login">Sign in</a>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===================================================================== -->
+<div class="group">
+  <h2>Owner app</h2>
+  <p>Everything behind sign-in. All personal fields shown here — name, phone, address, tag labels, locations, messages — are stored encrypted with a key that belongs to this one account, and decrypted only for the request that displays them.</p>
+
+  <section class="page" id="dashboard">
+    <h3>Tags</h3>
+    <div class="chips"><span class="chip route">/app</span><span class="chip owner">signed-in owner</span><span class="chip">GET /api/v1/tags · POST /api/v1/tags</span></div>
+    <figure><a href="screenshots/10-dashboard.png" target="_blank" rel="noopener"><img src="screenshots/10-dashboard.png" alt="Dashboard showing three tags with the same design, one reported lost" loading="lazy" width="1280" height="996"></a>
+      <figcaption>Three tags, one design. The lost warning appears because the blue carry-on is reported lost.</figcaption></figure>
+    <div class="notes" style="margin-top:20px">
+      <h4>What is on it</h4>
+      <ul>
+        <li><strong>Greeting and <em>Add a tag</em></strong>.</li>
+        <li><strong>Warnings</strong>, when they apply — “One bag is marked lost. Your name and a message link are visible to anyone who scans it,” and, for an unconfirmed address, that confirming is required before a bag can be marked lost.</li>
+        <li><strong>A card per tag</strong> — the tag face with your name and label, a <em>Reported lost</em> or <em>Marked safe</em> pill, and “Last scanned … · N total” (or “Never scanned · added &lt;date&gt;”).</li>
+      </ul>
+      <h4>How it behaves</h4>
+      <ul>
+        <li><strong>What you see is what prints.</strong> Each card uses the same pattern and layout geometry as the print PDF, not an approximation of it.</li>
+        <li><strong>Every tag carries the same design.</strong> It is generated from a random seed on your account — never from your name or email — so a carry-on, a duffel and a hard-shell case all wear one recognisable mark.</li>
+        <li><em>Add a tag</em> creates one immediately with a fresh 256-bit scan code. Up to 25 tags per account.</li>
+        <li>Clicking a card opens <a href="#tag-detail">Tag detail</a>. The list view deliberately omits scan links; only the detail page shows one.</li>
+        <li>The QR drawn on these previews is a decorative placeholder, not a scannable code, so nobody tries to scan a screen full of them.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="page" id="tag-detail">
+    <h3>Tag detail</h3>
+    <div class="chips"><span class="chip route">/app/tags/:id</span><span class="chip owner">signed-in owner</span><span class="chip">PATCH · DELETE /api/v1/tags/:id</span></div>
+    <div class="split">
+      <figure class="tall"><a href="screenshots/11-tag-lost.png" target="_blank" rel="noopener"><img src="screenshots/11-tag-lost.png" alt="Tag detail for a lost bag with status toggles, scan history, print options and scan link" loading="lazy" width="1280" height="1772"></a>
+        <figcaption>A tag reported lost, with three scans — two with a shared city.</figcaption></figure>
+      <div class="notes">
+        <h4>Left column</h4>
+        <ul>
+          <li><strong>Status</strong> — <em>Report this bag lost</em>. The hint changes with state: while safe, “a scan shows nothing personal at all”; while lost, “your name and a message link are visible to anyone who scans this tag.” Disabled until your email address is confirmed, because this is the one action that publishes a name to strangers.</li>
+          <li><strong>What a finder sees when it is lost</strong> — <em>Show my name</em>, <em>Allow messages</em> and <em>Email me when this tag is scanned</em>. The card ends with a reminder that the address is never shown, at any setting.</li>
+          <li><strong>Details</strong> — the label (“Blue carry-on”), stored encrypted and printed small under your name.</li>
+          <li><strong>Scan activity</strong> — the 100 most recent scans: time, device family (“Safari on iOS”), whether contact was shown, the city if the finder shared one, and when each entry is automatically deleted.</li>
+        </ul>
+        <h4>Right column</h4>
+        <ul>
+          <li><strong>Tag preview</strong> and the design's name (“Brick ladder”).</li>
+          <li><strong>Print</strong> — <em>Download print PDF</em> at the supplier's exact size, <em>Proof with trim guides</em>, and <em>QR code only (SVG)</em>. See <a href="#print">Printed tag</a>.</li>
+          <li><strong>Scan link</strong> — the URL encoded in the QR, and <em>Issue a new code</em>, which asks for confirmation, invalidates every printed copy, and closes open conversations with finders.</li>
+          <li><strong>Delete</strong> — removes the tag and its entire scan history, permanently.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="split" style="margin-top:26px">
+      <figure class="tall"><a href="screenshots/12-tag-safe.png" target="_blank" rel="noopener"><img src="screenshots/12-tag-safe.png" alt="Tag detail for a bag marked safe" loading="lazy" width="1280" height="1772"></a>
+        <figcaption>The same page for a bag marked safe.</figcaption></figure>
+      <div class="notes">
+        <div class="privacy">
+          <h4>Privacy in the scan log</h4>
+          <ul>
+            <li>The finder's network address is <strong>never stored</strong>. Deduplication uses a keyed hash of a truncated address that is salted with the date, so it stops matching after a day.</li>
+            <li>Location is only ever what a finder chose to share, and only to city level. It is encrypted like any other personal field.</li>
+            <li>Device is a family name, never a full user-agent string.</li>
+            <li>Entries expire after 90 days by default and are hard-deleted.</li>
+          </ul>
+        </div>
+        <div class="warn"><p><strong>Deleting is final.</strong> A deleted tag's history is not soft-deleted or recoverable — a “deleted” flag on a location history is still a location history.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="inbox">
+    <h3>Inbox</h3>
+    <div class="chips"><span class="chip route">/app/inbox</span><span class="chip owner">signed-in owner</span><span class="chip">GET /api/v1/threads · POST …/reply</span></div>
+    <div class="split">
+      <figure><a href="screenshots/13-inbox.png" target="_blank" rel="noopener"><img src="screenshots/13-inbox.png" alt="Inbox with one conversation open showing the finder's messages and the owner's reply" loading="lazy" width="1280" height="1203"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <ul>
+          <li><strong>Conversation list</strong> — per thread: the tag it concerns, a <em>new</em> pill if unread, a preview of the latest message, the time, and when it expires.</li>
+          <li><strong>Open conversation</strong> — finder messages on the left, yours on the right in green, each with sender and time.</li>
+          <li><strong>Contact the finder left</strong>, if they chose to — here, “Ask for Sam at the AA desk”.</li>
+          <li><strong>Reply</strong> box, or a notice if the conversation was closed by rotating the tag's code.</li>
+        </ul>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>Opening a thread marks it read.</li>
+          <li>Each message in either direction extends the conversation by 30 days, so an active exchange is not cut off mid-way. Idle ones are deleted.</li>
+          <li>Up to 50 messages per conversation.</li>
+        </ul>
+        <div class="privacy"><h4>Privacy</h4><p>Messages are relayed. The finder never sees your email or phone number, and you only see theirs if they typed it. Message bodies are encrypted at rest, and the notification email says only that a message arrived — never what it says.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="settings">
+    <h3>Settings</h3>
+    <div class="chips"><span class="chip route">/app/settings</span><span class="chip owner">signed-in owner</span><span class="chip">/api/v1/account · /api/v1/auth/*</span></div>
+    <div class="split">
+      <figure class="tall"><a href="screenshots/14-settings.png" target="_blank" rel="noopener"><img src="screenshots/14-settings.png" alt="Settings page with personal details, notifications, two-factor, devices, password and data sections" loading="lazy" width="1280" height="2618"></a></figure>
+      <div class="notes">
+        <h4>Your details</h4>
+        <p>Email (read-only, with confirmation status), name, phone and address — each with a hint saying exactly where it can appear. Name: only to a finder, only when a bag is lost. Phone: never shown. Address: only for shipping physical tags, never on a scan page. Loading this card is recorded in the audit log, because it is where encrypted data becomes readable again.</p>
+        <h4>Notifications</h4>
+        <p>One switch for scan emails. They are already rate limited: repeat scans by the same person within 10 minutes count once, and each tag emails at most every 30 minutes.</p>
+        <h4>Two-factor authentication</h4>
+        <p><em>Set up two-factor</em> shows a secret and setup link for an authenticator app; entering a working code turns it on and reveals ten recovery codes <strong>once</strong>. Turning it off needs your password and sends a security email.</p>
+        <h4>Signed-in devices</h4>
+        <p>Every active session by device family and last activity, with <em>this device</em> marked, and <em>Sign out everywhere else</em>. (“Unknown” in the capture is the command-line client that seeded the demo data.)</p>
+        <h4>Password</h4>
+        <p>Current and new password. Changing it signs out every other device and sends an email with a “this was not me” link.</p>
+        <h4>Your data</h4>
+        <ul>
+          <li><em>Download my data</em> — one JSON file with your profile, design, every tag, its scans and full conversations, decrypted. Limited to 5 a day.</li>
+          <li><em>Delete my account</em> — needs your password and typing <code>DELETE</code>. The account's encryption key is destroyed before the rows are, so anything left in a backup can never be decrypted. Printed tags then show “not registered”.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===================================================================== -->
+<div class="group">
+  <h2>Finder — the scan surface</h2>
+  <p>The only part of the system a stranger can reach. It has no navigation, no sign-up prompt and no cookie banner: someone standing at a carousel should get their one answer in the first line. Shown at phone width.</p>
+
+  <section class="page" id="scan-safe">
+    <h3>Scan: marked safe</h3>
+    <div class="chips"><span class="chip route">/t/:token</span><span class="chip finder">anyone who scans</span><span class="chip">GET /api/v1/scan/:token</span></div>
+    <div class="split narrow">
+      <figure class="phone"><a href="screenshots/20-scan-safe.png" target="_blank" rel="noopener"><img src="screenshots/20-scan-safe.png" alt="Scan page for a bag marked safe, showing no personal details" loading="lazy" width="780" height="1850"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <ul>
+          <li><strong>The tag's crest</strong> — just the pattern, cropped to the top of the tag, so the finder can confirm it's the tag in their hand.</li>
+          <li><strong>Marked safe</strong> — “This bag has not been reported lost. The owner knows where it is, so no personal details are shown.”</li>
+          <li><strong>Tell the owner roughly where you are?</strong> — optional city and country, <em>Share city</em> or <em>No thanks</em>.</li>
+          <li>A closing line that no account is needed and nothing is stored unless the finder chooses to share.</li>
+        </ul>
+        <h4>How it behaves</h4>
+        <ul>
+          <li><strong>Loading the page changes nothing.</strong> The scan is recorded by a separate request the page sends once it has rendered, so link-preview bots and browser prefetching never show up in the owner's history or trigger an email.</li>
+          <li>The owner gets a scan email, subject to the cooldowns described in <a href="#settings">Settings</a>.</li>
+          <li>Sharing is one-time and city-level only; typed input is validated to plain place names.</li>
+        </ul>
+        <div class="privacy"><h4>Privacy</h4><p>The response for a safe tag contains the design, the status and the retention period. There is no field for a name, number or address to leak through.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="scan-lost">
+    <h3>Scan: reported lost</h3>
+    <div class="chips"><span class="chip route">/t/:token</span><span class="chip finder">anyone who scans</span><span class="chip">POST /api/v1/scan/:token/message</span></div>
+    <div class="split narrow">
+      <figure class="phone"><a href="screenshots/21-scan-lost.png" target="_blank" rel="noopener"><img src="screenshots/21-scan-lost.png" alt="Scan page for a lost bag showing the owner's name, a message form and location sharing" loading="lazy" width="780" height="2728"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <ul>
+          <li><strong>Reported lost</strong> — “This bag belongs to <em>Rosa Fernandez</em>. Thank you for scanning.”</li>
+          <li><strong>Message the owner</strong> — a message box and an optional “How they could reach you”, with the explanation that neither side sees the other's number or email.</li>
+          <li><strong>Tell the owner roughly where you are?</strong>, as on the safe page.</li>
+        </ul>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>The name appears only if the owner left <em>Show my name</em> on; otherwise the heading reads “The owner is looking for this bag”.</li>
+          <li>The message form appears only if <em>Allow messages</em> is on. A safe tag refuses messages outright — the relay exists to get a bag home, not as a channel to a stranger.</li>
+          <li>Messages are limited to 5 an hour and 15 a day per client.</li>
+        </ul>
+        <div class="privacy"><h4>Privacy</h4><p>The name is the <em>only</em> personal field that has any code path into this response. Phone, email and address cannot appear here at any setting.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="message-sent">
+    <h3>Message sent</h3>
+    <div class="chips"><span class="chip route">/t/:token</span><span class="chip finder">after sending</span></div>
+    <div class="split narrow">
+      <figure class="phone"><a href="screenshots/22-scan-message-sent.png" target="_blank" rel="noopener"><img src="screenshots/22-scan-message-sent.png" alt="Confirmation that the message was sent, showing a private link back to the conversation" loading="lazy" width="780" height="2412"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p><em>Message sent</em> — “The owner has been notified. Keep this link to see their reply — it is the only way back to this conversation, and it needs no account.” The private conversation link, and <em>Open the conversation</em>.</p>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>The link contains a 256-bit random token; it is the finder's entire credential. It is shown once and only its hash is stored.</li>
+          <li>The owner receives an email that a message arrived — without the message itself.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="relay">
+    <h3>Relayed conversation</h3>
+    <div class="chips"><span class="chip route">/r/:token</span><span class="chip finder">finder, via their private link</span><span class="chip">GET · POST /api/v1/relay/:token</span></div>
+    <div class="split narrow">
+      <figure class="phone"><a href="screenshots/23-relay.png" target="_blank" rel="noopener"><img src="screenshots/23-relay.png" alt="Finder's view of the conversation with the owner's reply" loading="lazy" width="780" height="1800"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p><em>You and the owner</em>, a reminder that neither side sees the other's contact details and when the conversation will be deleted, the thread (the finder's own messages on the right), and a reply box — or “The owner has closed this conversation” once it is closed.</p>
+        <h4>How it behaves</h4>
+        <ul>
+          <li>No sign-in — the link is the access. Replies are limited to 20 an hour.</li>
+          <li>Each reply notifies the owner and extends the conversation's life by 30 days.</li>
+          <li>An expired or closed conversation shows “This conversation has ended”.</li>
+        </ul>
+        <div class="privacy"><h4>Privacy</h4><p>The finder's view never includes the contact detail they left for the owner, nor anything about the owner beyond what the lost page already showed.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="scan-unknown">
+    <h3>Unregistered tag</h3>
+    <div class="chips"><span class="chip route">/t/:unknown</span><span class="chip finder">anyone who scans</span></div>
+    <div class="split narrow">
+      <figure class="phone"><a href="screenshots/24-scan-unknown.png" target="_blank" rel="noopener"><img src="screenshots/24-scan-unknown.png" alt="Page saying the tag is not registered" loading="lazy" width="780" height="1800"></a></figure>
+      <div class="notes">
+        <h4>What is on it</h4>
+        <p>“This tag is not registered. It may have been deleted, or its code may have been replaced by the owner.”</p>
+        <h4>How it behaves</h4>
+        <p>Shown for a code that never existed, a deleted tag, a rotated code, and a deleted account alike. These cases are deliberately indistinguishable, so scanning an old tag reveals nothing about what happened to its owner.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===================================================================== -->
+<div class="group" id="emails">
+  <h2>Emails</h2>
+  <p>Every message is sent in two parts: an HTML version styled like the site, and a full plain-text version carrying the same links, for text-only clients and screen readers. The coloured bar at the top signals intent — <strong style="color:var(--forest-deep)">forest</strong> for routine account mail, <strong style="color:var(--brick)">brick</strong> for anything that needs attention or concerns security, <strong style="color:var(--brass)">brass</strong> for purely informational notices.</p>
+
+  <div class="pair" style="margin-top:26px">
+    <figure><a href="screenshots/30-email-verify.png" target="_blank" rel="noopener"><img src="screenshots/30-email-verify.png" alt="Confirm your email address email" loading="lazy" width="680" height="537"></a>
+      <figcaption><strong>Confirm your email address</strong> — sent on sign-up. Button plus the raw link for clients that strip buttons. Valid 24 hours, once.</figcaption></figure>
+    <figure><a href="screenshots/31-email-duplicate.png" target="_blank" rel="noopener"><img src="screenshots/31-email-duplicate.png" alt="Someone tried to sign up with your address email" loading="lazy" width="680" height="556"></a>
+      <figcaption><strong>Someone tried to sign up with your address</strong> — sent instead of a new-account email when the address is already a confirmed account. Contains no link that acts on the account.</figcaption></figure>
+    <figure><a href="screenshots/32-email-reset.png" target="_blank" rel="noopener"><img src="screenshots/32-email-reset.png" alt="Choose a new password email" loading="lazy" width="680" height="575"></a>
+      <figcaption><strong>Choose a new password</strong> — valid 30 minutes, once; warns that finishing signs out every device.</figcaption></figure>
+    <figure><a href="screenshots/33-email-scan.png" target="_blank" rel="noopener"><img src="screenshots/33-email-scan.png" alt="Your tag was scanned near Dallas email" loading="lazy" width="680" height="532"></a>
+      <figcaption><strong>Your tag was scanned</strong> — brick because the bag is lost and your name was shown; a safe bag's version uses forest. City only if the finder shared it. Never says which bag.</figcaption></figure>
+    <figure><a href="screenshots/34-email-relay.png" target="_blank" rel="noopener"><img src="screenshots/34-email-relay.png" alt="A message about your bag email" loading="lazy" width="680" height="522"></a>
+      <figcaption><strong>A message about your bag</strong> — links to the inbox; the message itself stays behind sign-in, out of lock-screen previews.</figcaption></figure>
+  </div>
+  <div class="notes" style="margin-top:22px">
+    <p>Not pictured, same template: <em>Your password was changed</em>, <em>Two-factor authentication is off</em> (both brick, with a “this was not me” link) and <em>Your account has been deleted</em>. All copy lives in <code>api/app/services/notifications.py</code>, so everything the service can put in an inbox is readable in one file.</p>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<div class="group" id="print">
+  <h2>Printed tag</h2>
+  <p>From <em>Download print PDF</em> on <a href="#tag-detail">Tag detail</a>: a two-page PDF, front and back, at the print supplier's template size. Rendered here at three times scale.</p>
+
+  <div class="split" style="margin-top:26px">
+    <div class="pair">
+      <figure class="print"><a href="screenshots/40-print-1.png" target="_blank" rel="noopener"><img src="screenshots/40-print-1.png" alt="Front of the printed tag with pattern, owner name, label and QR code" loading="lazy" width="1261" height="1844"></a><figcaption>Front.</figcaption></figure>
+      <figure class="print"><a href="screenshots/40-print-2.png" target="_blank" rel="noopener"><img src="screenshots/40-print-2.png" alt="Back of the printed tag with finder instructions and a QR code" loading="lazy" width="1261" height="1844"></a><figcaption>Back.</figcaption></figure>
+    </div>
+    <div class="notes">
+      <h4>Front</h4>
+      <p>The traveller's pattern running off both side edges, the owner's name and the tag's label, the QR code with its white quiet zone, “Found this bag? Scan the code.”, and a footnote that no personal details are shown unless the bag is reported lost. The circle near the top marks the strap hole.</p>
+      <h4>Back</h4>
+      <p>A strip of the same pattern so both sides read as one tag, <em>If you found this bag</em> with four numbered steps, and a second QR code. The instructions are sized to fit above the code; if a design's text would run long, the type steps down rather than overlapping the code's quiet zone.</p>
+      <div class="privacy"><h4>Privacy</h4><p>The name printed on the front is the owner's own choice and visible to anyone handling the bag — unlike everything behind the scan page. The QR encodes only the scan URL with its random token. The PDF carries no author, creator or producer metadata.</p></div>
+    </div>
+  </div>
+
+  <div class="split" style="margin-top:34px">
+    <figure class="print"><a href="screenshots/41-print-guides.png" target="_blank" rel="noopener"><img src="screenshots/41-print-guides.png" alt="Front of the tag with magenta trim and cyan safety guide lines" loading="lazy" width="1261" height="1844"></a>
+      <figcaption><em>Proof with trim guides</em>: magenta is the trim, cyan the safety area.</figcaption></figure>
+    <div class="notes">
+      <h4>Geometry</h4>
+      <div class="table-wrap">
+      <table class="spec">
+        <thead><tr><th></th><th>Height</th><th>Width</th><th>PDF box</th></tr></thead>
+        <tbody>
+          <tr><td>Bleed</td><td>108.40 mm · 4.27″</td><td>74.10 mm · 2.92″</td><td>MediaBox, BleedBox</td></tr>
+          <tr><td>Trim</td><td>104.40 mm · 4.11″</td><td>70.10 mm · 2.76″</td><td>TrimBox</td></tr>
+          <tr><td>Safety</td><td>99.40 mm · 3.91″</td><td>65.10 mm · 2.56″</td><td>ArtBox</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <ul>
+        <li>2.00 mm of bleed outside the trim and 2.50 mm of safety inside it, on every edge.</li>
+        <li>Background and pattern run to the bleed edge so a drifting cut never shows white; text and QR stay inside the safety area so a drifting cut never clips them.</li>
+        <li>Fonts are embedded — many print workflows reject files that aren't.</li>
+        <li>Strap hole marked at 5.50 mm diameter, centred 8.50 mm below the trim edge.</li>
+        <li>Add <code>?sides=1</code> for the front only.</li>
+      </ul>
+      <div class="warn"><p><strong>Never send a guided proof to print.</strong> The guide lines are drawn into the artwork itself.</p></div>
+      <div class="privacy"><h4>Preview matches print</h4><p>The tag drawn on the dashboard, the tag page and the scan page uses the same pattern geometry as this PDF. The shapes are calculated once in <code>api/app/core/motif.py</code>, and <code>web/src/lib/motif.ts</code> is a line-by-line port of that code. A test runs both on nearly 900 combinations of design and size and compares every coordinate, so the preview and print can't quietly drift apart. The one intended difference is the typeface: print embeds Bitstream Vera Sans, and the browser uses the nearest installed match.</p></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Captured from the running application with fictional demo data. Screenshots live in <code>docs/screenshots/</code>. Dynamic Luggage Tag is licensed under AGPL-3.0.
+</footer>
+</main>
+</div>
+</body>
+</html>

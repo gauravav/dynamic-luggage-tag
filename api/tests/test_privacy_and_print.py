@@ -280,3 +280,44 @@ class TestRetention:
             assert counts["scan_events"] == 1
             assert db.query(ScanEvent).count() == 1
             assert db.query(User).count() == 1
+
+
+class TestBackFaceClearance:
+    def test_instructions_never_run_into_the_qr_block(self):
+        """Text over a symbol's quiet zone can stop it scanning."""
+        import io
+        from unittest import mock
+
+        from reportlab.pdfgen import canvas
+
+        print_layout._register_fonts()
+        original_wrapped = print_layout._draw_wrapped
+        original_qr = print_layout._draw_qr
+
+        for motif in design_module.MOTIFS:
+            for palette in design_module.PALETTES:
+                baselines: list[float] = []
+                boxes: list = []
+
+                def wrapped(pdf, text, baselines=baselines, **kwargs):
+                    y = original_wrapped(pdf, text, **kwargs)
+                    baselines.append(y + kwargs["leading"])
+                    return y
+
+                def qr(pdf, box, url, color, boxes=boxes):
+                    boxes.append(box)
+                    return original_qr(pdf, box, url, color)
+
+                face = print_layout.TagFace(
+                    design=design_module.from_dict({"motif": motif, "palette": palette}),
+                    scan_url="https://example.com/t/" + "a" * 43,
+                )
+                with (
+                    mock.patch.object(print_layout, "_draw_wrapped", wrapped),
+                    mock.patch.object(print_layout, "_draw_qr", qr),
+                ):
+                    pdf = canvas.Canvas(io.BytesIO())
+                    print_layout._draw_back(pdf, face, guides=False)
+
+                gap_mm = (min(baselines) - boxes[-1].top) / print_layout.mm
+                assert gap_mm >= 3, f"{palette} {motif}: only {gap_mm:.2f} mm above the QR"

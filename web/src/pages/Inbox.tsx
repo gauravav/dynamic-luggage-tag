@@ -84,7 +84,7 @@ export function Inbox() {
                 <button
                   type="button"
                   className="btn btn--quiet"
-                  style={{ textAlign: 'left', flex: 1, display: 'block' }}
+                  style={{ textAlign: 'left', flex: 1, display: 'block', fontWeight: 400 }}
                   onClick={() => open(thread.id)}
                 >
                   <strong>

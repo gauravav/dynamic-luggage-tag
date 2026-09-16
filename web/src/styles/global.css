@@ -79,7 +79,9 @@ a { color: var(--forest-deep); }
 .wrap {
   max-width: 980px;
   margin: 0 auto;
-  padding: 0 24px;
+  /* Inline only. Most .wrap elements are also .page, which owns the vertical
+     padding; a shorthand here would zero it wherever this rule wins. */
+  padding-inline: 24px;
 }
 .wrap--narrow { max-width: 460px; }
 .wrap--mid { max-width: 720px; }
@@ -169,7 +171,9 @@ a { color: var(--forest-deep); }
 .nav a.btn--primary:hover { color: var(--white); background: var(--forest-deep); }
 .nav a.btn--ghost { color: var(--ink); }
 
-.page { padding: 40px 0 88px; }
+/* padding-block, not the shorthand: these elements also carry .wrap, and a
+   padding shorthand here would zero the side gutters .wrap provides. */
+.page { padding-block: 40px 88px; }
 .page__head { margin-bottom: 28px; }
 .page__head h1 { font-size: clamp(26px, 4vw, 34px); }
 
@@ -450,9 +454,9 @@ hr.rule { border: none; border-top: 1px solid var(--paper-line); margin: 28px 0;
 }
 @media (max-width: 620px) {
   .grid--2, .grid--4 { grid-template-columns: 1fr; }
-  .page { padding: 28px 0 64px; }
+  .page { padding-block: 28px 64px; }
   .site-header__inner { padding: 12px 16px; }
-  .wrap { padding: 0 16px; }
+  .wrap { padding-inline: 16px; }
   .msg { max-width: 88%; }
 }
 
