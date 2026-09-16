@@ -142,6 +142,8 @@ export interface Tag {
   scan_count: number
   last_scan_at: string | null
   created_at: string
+  nfc_linked: boolean
+  nfc_linked_at: string | null
   scan_url?: string
 }
 

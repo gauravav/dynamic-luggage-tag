@@ -436,3 +436,109 @@ class TestSecurityHeaders:
         response = client.get("/api/v1/health", headers={"Origin": "http://localhost:5173"})
         assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
         assert response.headers["Access-Control-Allow-Credentials"] == "true"
+
+
+class TestNfcBinding:
+    """A chip, once linked, can only be written through the site by its owner."""
+
+    SERIAL = "04:a2:3b:1c:5d:80:00"
+
+    def _bind(self, client, csrf, tag_id, serial=SERIAL, **extra):
+        return client.post(
+            f"/api/v1/tags/{tag_id}/nfc",
+            json={"serial": serial, **extra},
+            headers=auth_headers(csrf),
+        )
+
+    def _lookup(self, client, csrf, serial=SERIAL):
+        return client.post(
+            "/api/v1/tags/nfc/lookup", json={"serial": serial}, headers=auth_headers(csrf)
+        ).get_json()
+
+    def test_owner_links_a_chip(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        assert tag["nfc_linked"] is False
+
+        response = self._bind(client, csrf, tag["id"])
+        assert response.status_code == 200, response.get_json()
+        assert response.get_json()["tag"]["nfc_linked"] is True
+
+        # Rebinding the same chip is idempotent, and the serial format is normalized.
+        again = self._bind(client, csrf, tag["id"], serial="04A23B1C5D8000")
+        assert again.status_code == 200
+
+        found = self._lookup(client, csrf)
+        assert found["registered"] == "mine"
+        assert found["tag"]["id"] == tag["id"]
+        assert found["tag"]["scan_url"] == tag["scan_url"]
+
+    def test_the_same_owner_can_rewrite_from_another_device(self, client, app, outbox):
+        csrf, email = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        assert self._bind(client, csrf, tag["id"]).status_code == 200
+
+        phone = app.test_client()
+        login = phone.post(
+            "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+        ).get_json()
+        response = self._bind(phone, login["csrf_token"], tag["id"])
+        assert response.status_code == 200, response.get_json()
+
+    def test_another_account_cannot_claim_a_linked_chip(self, client, app, outbox):
+        csrf, _ = register_and_sign_in(client, outbox, email="owner@example.com")
+        assert self._bind(client, csrf, _make_tag(client, csrf)["id"]).status_code == 200
+
+        intruder = app.test_client()
+        intruder_csrf, _ = register_and_sign_in(intruder, outbox, email="intruder@example.com")
+        their_tag = _make_tag(intruder, intruder_csrf)
+
+        for replace in (False, True):
+            response = self._bind(intruder, intruder_csrf, their_tag["id"], replace=replace)
+            assert response.status_code == 409
+            assert response.get_json()["error"]["code"] == "nfc_chip_claimed"
+
+        # They learn only that it is someone else's: no id, no label.
+        assert self._lookup(intruder, intruder_csrf) == {"registered": "other"}
+
+    def test_moving_a_chip_between_own_tags_needs_confirmation(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        first = _make_tag(client, csrf, "Carry-on")
+        second = _make_tag(client, csrf, "Duffel")
+        assert self._bind(client, csrf, first["id"]).status_code == 200
+
+        response = self._bind(client, csrf, second["id"])
+        assert response.status_code == 409
+        assert response.get_json()["error"]["code"] == "nfc_chip_on_other_tag"
+
+        moved = self._bind(client, csrf, second["id"], replace=True)
+        assert moved.status_code == 200
+        assert client.get(f"/api/v1/tags/{first['id']}").get_json()["tag"]["nfc_linked"] is False
+        assert self._lookup(client, csrf)["tag"]["id"] == second["id"]
+
+    def test_replacing_a_tags_sticker_needs_confirmation(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        assert self._bind(client, csrf, tag["id"]).status_code == 200
+
+        response = self._bind(client, csrf, tag["id"], serial="04:11:22:33:44:55:66")
+        assert response.get_json()["error"]["code"] == "nfc_tag_has_other_chip"
+        replaced = self._bind(client, csrf, tag["id"], serial="04:11:22:33:44:55:66", replace=True)
+        assert replaced.status_code == 200
+        assert self._lookup(client, csrf)["registered"] == "none"
+
+    def test_unlinking_releases_the_chip(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        self._bind(client, csrf, tag["id"])
+
+        response = client.delete(f"/api/v1/tags/{tag['id']}/nfc", headers=auth_headers(csrf))
+        assert response.get_json()["tag"]["nfc_linked"] is False
+        assert self._lookup(client, csrf)["registered"] == "none"
+
+    def test_rejects_a_malformed_serial(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        response = self._bind(client, csrf, tag["id"], serial="not-a-serial")
+        assert response.status_code == 400
+        assert "serial" in response.get_json()["error"]["fields"]

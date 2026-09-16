@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError, api, parseLocation, type ScanRecord, type Tag } from '../api/client'
+import { NfcCard } from '../components/NfcCard'
 import { TagArt } from '../components/TagArt'
 import { Empty, Field, Notice, Spinner, StatusPill, Toggle } from '../components/ui'
 import { describe, formatDateTime, relativeTime } from '../lib/design'
@@ -65,7 +66,11 @@ export function TagDetail() {
     try {
       const body = await api.post<{ tag: Tag; threads_closed: number }>(`/tags/${tagId}/rotate`)
       setTag(body.tag)
-      setInfo('A new code was issued. Print the tag again before using it.')
+      setInfo(
+        body.tag.nfc_linked
+          ? 'A new code was issued. Print the tag again, and rewrite the NFC sticker from a phone.'
+          : 'A new code was issued. Print the tag again before using it.',
+      )
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not rotate the code.')
     } finally {
@@ -264,6 +269,8 @@ export function TagDetail() {
               </a>
             </div>
           </div>
+
+          <NfcCard tag={tag} onChange={setTag} />
 
           <div className="card">
             <h3 style={{ marginBottom: 10 }}>Scan link</h3>

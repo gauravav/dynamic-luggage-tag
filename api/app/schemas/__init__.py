@@ -182,6 +182,27 @@ class TagUpdateIn(Payload):
         return value
 
 
+class NfcChipIn(Payload):
+    """A chip serial number as Web NFC reports it, e.g. ``04:a2:3b:1c:5d:80:00``."""
+
+    serial: str = Field(min_length=1, max_length=64)
+
+    @field_validator("serial")
+    @classmethod
+    def _normalized_serial(cls, value: str) -> str:
+        serial = value.replace(":", "").replace("-", "").lower()
+        # NFC Forum tags carry a 4, 7 or 10 byte UID.
+        if not 8 <= len(serial) <= 20 or any(ch not in "0123456789abcdef" for ch in serial):
+            raise ValueError("This does not look like an NFC chip serial number.")
+        return serial
+
+
+class NfcBindIn(NfcChipIn):
+    # Set once the owner has confirmed moving a chip between their own tags, or
+    # swapping this tag's sticker for a new one.
+    replace: bool = False
+
+
 # --------------------------------------------------------------------------
 # Public scan surface
 # --------------------------------------------------------------------------
