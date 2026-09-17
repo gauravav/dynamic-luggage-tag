@@ -33,6 +33,7 @@ from ..models import (
     RetiredToken,
     ScanEvent,
     Tag,
+    TagClaim,
     User,
     utcnow,
 )
@@ -85,6 +86,20 @@ def _lookup(token: str) -> Resolved:
             # The owner has reprinted and asked for the old codes to stop.
             raise ApiError("not_found", "This tag is not registered.", status=404)
         return Resolved(retired.tag, retired=True)
+
+    # A tag that was printed and shipped before anyone signed up for it. "Not
+    # registered" would be true but useless — this is somebody's new tag, and
+    # the thing they need to know is that it works and how to finish it.
+    unclaimed = db.scalar(
+        select(TagClaim).where(TagClaim.token_hash == token_hash, TagClaim.claimed_at.is_(None))
+    )
+    if unclaimed is not None:
+        raise ApiError(
+            "tag_not_set_up",
+            "This tag has not been set up yet. Create an account with the address it was "
+            "sent to, and it will be waiting.",
+            status=409,
+        )
 
     raise ApiError("not_found", "This tag is not registered.", status=404)
 

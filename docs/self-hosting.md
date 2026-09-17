@@ -211,6 +211,10 @@ the systemd unit. It's overridable via `DLT_DEPLOY_SERVICE`,
 
 Then:
 
+- Set `DLT_ADMIN_EMAIL` if you sell physical tags. That one account gets an
+  Issue page for creating a code, printing it, and posting it before the buyer
+  has signed up — see the operator section of the security analysis. Leave it
+  unset and there is no admin at all.
 - Terminate TLS in front of it, and set `DLT_TRUSTED_PROXY_HOPS` to match.
 - Set `DLT_RATELIMIT_STORAGE_URI` to a Redis URL. The in-memory default is
   per-worker, so four workers means four times your configured limit.

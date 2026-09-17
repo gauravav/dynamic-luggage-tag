@@ -13,6 +13,7 @@ from ..errors import ApiError
 from ..extensions import app_config, db_session, keyring
 from ..models import Session, Tag, User
 from . import sessions as session_service
+from .crypto import blind_index, constant_time_equals, normalize_email
 from .csrf import CsrfError
 from .csrf import verify as verify_csrf
 from .pii import UserCrypto, unlock
@@ -102,6 +103,46 @@ def verified_email_required(view: Callable) -> Callable:
                 "Verify your email address before using this feature.",
                 status=403,
             )
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def is_admin(user: User | None = None) -> bool:
+    """Whether this account is the one named in DLT_ADMIN_EMAIL.
+
+    Compared as a blind index, so answering the question never decrypts an
+    address — and an operator who has not set the variable has no admin at all
+    rather than a default one.
+    """
+    config = app_config()
+    if not config.admin_email:
+        return False
+    subject = user or current_user()
+    if subject is None or not subject.is_active:
+        return False
+    expected = blind_index(
+        config.blind_index_key, "user.email", normalize_email(config.admin_email)
+    )
+    return constant_time_equals(bytes(subject.email_bidx), expected)
+
+
+def admin_required(view: Callable) -> Callable:
+    """Gates the pre-issuing surface.
+
+    A confirmed address is required as well as the right one: the whole point
+    of naming the admin in the environment is that the privilege follows an
+    address somebody has proven they control.
+    """
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        user = require_user()
+        if not is_admin(user) or user.email_verified_at is None:
+            # 404, not 403. A 403 confirms the route exists and that this
+            # account is simply not the one, which is a question nobody who is
+            # not the admin needs answered.
+            raise ApiError("not_found", "Not found.", status=404)
         return view(*args, **kwargs)
 
     return wrapper

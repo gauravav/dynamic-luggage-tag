@@ -55,6 +55,10 @@ DLT_BLIND_INDEX_KEY=$BIDX
 DLT_TOKEN_PEPPER=$PEPPER
 
 # --- Web ------------------------------------------------------------------
+# The one account allowed to pre-issue tags — see api/.env.example. Empty by
+# default: a development instance has no admin until you name one.
+DLT_ADMIN_EMAIL=
+
 DLT_FRONTEND_ORIGIN=http://localhost:5173
 DLT_PUBLIC_BASE_URL=http://localhost:5173
 DLT_COOKIE_SECURE=false

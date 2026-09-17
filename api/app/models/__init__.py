@@ -13,6 +13,7 @@ from .tag import (
     RetiredToken,
     ScanEvent,
     Tag,
+    TagClaim,
 )
 from .user import AuditEvent, EmailToken, RecoveryCode, Session, User
 
@@ -34,6 +35,7 @@ __all__ = [
     "ScanEvent",
     "Session",
     "Tag",
+    "TagClaim",
     "User",
     "utcnow",
 ]

@@ -210,6 +210,8 @@ export interface User {
   email_masked: string | null
   name: string | null
   email_verified: boolean
+  /** True only for the account named in DLT_ADMIN_EMAIL. Display only. */
+  is_admin: boolean
   totp_enabled: boolean
   notify_on_scan: boolean
   created_at: string

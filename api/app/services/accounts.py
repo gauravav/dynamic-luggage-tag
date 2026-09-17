@@ -22,6 +22,7 @@ from ..models import EmailToken, RecoveryCode, User, utcnow
 from ..security import crypto
 from ..security.passwords import hash_password
 from ..security.pii import UserCrypto
+from . import claims
 
 RECOVERY_CODE_COUNT = 10
 EMAIL_TOKEN_TTL = dt.timedelta(hours=24)
@@ -55,6 +56,11 @@ def create_user(
     wrapped, version = keyring.wrap(dek, owner_id=user_id)
     user_crypto = UserCrypto(user_id=user_id, dek=dek)
 
+    # A tag may already have been printed and shipped to this address. If so it
+    # has fixed artwork, and the account adopts its seed rather than generating
+    # one the printed tag would not match.
+    waiting = claims.pending_for(db, email, config=config)
+
     user = User(
         id=user_id,
         email_bidx=crypto.blind_index(
@@ -63,7 +69,7 @@ def create_user(
         password_hash=hash_password(hasher, password),
         dek_wrapped=wrapped,
         dek_version=version,
-        design_seed=design_module.new_seed(),
+        design_seed=claims.seed_for_new_user(waiting) or design_module.new_seed(),
         created_at=utcnow(),
         updated_at=utcnow(),
     )
@@ -71,6 +77,11 @@ def create_user(
     user_crypto.write_user(user, "email", email.strip())
     user_crypto.write_user(user, "name", name)
     db.add(user)
+    db.flush()
+
+    for claim in waiting:
+        claims.materialise(db, claim, user=user, user_crypto=user_crypto, keyring=keyring)
+
     return user, user_crypto
 
 

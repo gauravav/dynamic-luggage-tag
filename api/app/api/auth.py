@@ -36,7 +36,13 @@ from ..schemas import (
 )
 from ..security import audit, turnstile
 from ..security import sessions as session_service
-from ..security.authz import current_session, login_required, require_user, user_crypto
+from ..security.authz import (
+    current_session,
+    is_admin,
+    login_required,
+    require_user,
+    user_crypto,
+)
 from ..security.crypto import DecryptionError, decrypt_field, encrypt_field, field_aad
 from ..security.passwords import (
     PasswordPolicyError,
@@ -767,6 +773,9 @@ def _user_summary(user: User) -> dict:
         "email_masked": mask_email(email) if email else None,
         "name": name,
         "email_verified": user.email_verified_at is not None,
+        # Whether this account is the one named in DLT_ADMIN_EMAIL. The client
+        # uses it to show the link; the server does not trust it for anything.
+        "is_admin": is_admin(user),
         "totp_enabled": user.totp_enabled,
         "notify_on_scan": user.notify_on_scan,
         "created_at": user.created_at.isoformat(),

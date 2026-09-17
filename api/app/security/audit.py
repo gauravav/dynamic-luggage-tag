@@ -48,6 +48,11 @@ TAG_DELETED = "tag.deleted"
 TAG_NFC_BOUND = "tag.nfc.bound"
 TAG_NFC_UNBOUND = "tag.nfc.unbound"
 
+# Pre-issuing, by the operator
+TAG_CLAIM_ISSUED = "tag.claim.issued"
+TAG_CLAIM_WITHDRAWN = "tag.claim.withdrawn"
+TAG_CLAIM_TAKEN = "tag.claim.taken"
+
 # Public surface
 TAG_SCANNED = "scan.recorded"
 CONTACT_REVEALED = "scan.contact_revealed"

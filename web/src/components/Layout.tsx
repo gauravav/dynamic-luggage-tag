@@ -89,6 +89,7 @@ export function SiteHeader({ unread = 0 }: { unread?: number }) {
             <div className="nav__desktop">
               <TopLink to="/app" end label="Tags" />
               <TopLink to="/app/inbox" label="Inbox" badge={unread} />
+              {user.is_admin && <TopLink to="/app/issue" label="Issue" />}
               <TopLink to="/app/settings" label="Settings" />
               <button type="button" className="btn btn--quiet" onClick={handleSignOut}>
                 Sign out

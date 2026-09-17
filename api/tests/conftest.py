@@ -45,6 +45,9 @@ def config():
         "kek_versions": {1: os.urandom(32)},
         "blind_index_key": os.urandom(32),
         "token_pepper": os.urandom(32),
+        # One account in the suite is the operator. Named here so the admin
+        # gate is exercised by the same mechanism production uses.
+        "admin_email": "operator@example.com",
     }
     os.environ.setdefault("DLT_KEK_V1", base64.b64encode(overrides["kek_versions"][1]).decode())
     os.environ.setdefault("DLT_SECRET_KEY", "testing-only")

@@ -11,13 +11,14 @@ from sqlalchemy.exc import IntegrityError
 from ..core import design as design_module
 from ..core import icons, print_layout, qr
 from ..errors import ApiError
-from ..extensions import app_config, db_session, limiter
+from ..extensions import app_config, db_session, keyring, limiter
 from ..models import TAG_STATUS_LOST, TAG_STATUS_SAFE, RetiredToken, Tag, utcnow
 from ..schemas import NfcBindIn, NfcChipIn, TagCreateIn, TagTokenIn, TagUpdateIn, parse
 from ..security import audit
 from ..security.authz import login_required, owned_tag, require_user, user_crypto
 from ..security.crypto import blind_index, hash_token, new_token
 from ..security.pii import UserCrypto
+from ..services import claims as claim_service
 
 bp = Blueprint("tags", __name__, url_prefix="/tags")
 
@@ -92,6 +93,28 @@ def _serialize(tag: Tag, crypto: UserCrypto, *, include_token: bool = False) -> 
 def list_tags():
     user = require_user()
     crypto = user_crypto()
+
+    # A tag may have been pre-issued to this address and shipped before the
+    # account existed — or after it did. This is the moment the answer matters,
+    # and the lookup is one indexed hit on a column the user row already holds,
+    # so nothing is decrypted to find out.
+    waiting = claim_service.pending_for_index(db_session(), user.email_bidx)
+    if waiting:
+        for claim in waiting:
+            claim_service.materialise(
+                db_session(), claim, user=user, user_crypto=crypto, keyring=keyring()
+            )
+            audit.record(
+                db_session(),
+                audit.TAG_CLAIM_TAKEN,
+                config=app_config(),
+                actor_user_id=user.id,
+                subject_user_id=user.id,
+                actor_type="user",
+                detail={"claim_id": str(claim.id)},
+            )
+        db_session().commit()
+
     tags = sorted(
         (tag for tag in user.tags if tag.revoked_at is None),
         key=lambda t: t.created_at,

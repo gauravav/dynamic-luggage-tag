@@ -224,6 +224,13 @@ class TagUpdateIn(TagAppearance):
         return value
 
 
+class TagClaimIn(TagAppearance):
+    """A code the operator is issuing to an address that may have no account."""
+
+    email: EmailStr = Field(max_length=254)
+    label: str | None = Field(default=None, max_length=80)
+
+
 class TagTokenIn(Payload):
     """A scan token an owner is asking us to match against their own tags.
 

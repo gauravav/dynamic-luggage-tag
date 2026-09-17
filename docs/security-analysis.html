@@ -141,6 +141,7 @@
     <li><a href="#session">3 · Sessions &amp; CSRF</a></li>
     <li><a href="#api">4 · API security</a></li>
     <li><a href="#public">5 · The public surface</a></li>
+    <li><a href="#operator">5b · The operator</a></li>
     <li><a href="#privacy">6 · Privacy</a></li>
   </ol>
   <h4>findings</h4>
@@ -704,6 +705,89 @@ if tag.name_disclosure == NAME_ALWAYS and not retired:</code></pre>
       scanner produce the same numbers.
     </figcaption>
   </figure>
+</section>
+
+<section id="operator">
+  <h2><span class="n">§ 5b</span>The operator surface</h2>
+  <p>
+    Physical tags are printed and shipped before the buyer has an account, so a
+    scan code has to exist — and be printable — while there is still no user to
+    own it and no data key to seal it under. One account can do that: the one
+    named in <code>DLT_ADMIN_EMAIL</code>.
+  </p>
+
+  <h3>The privilege is not in the database</h3>
+  <p>
+    Admin is an address in the environment, compared as a blind index, not a
+    role column. Someone who reaches the database cannot make themselves the
+    operator without also editing the file the process was started with. The
+    address must additionally be registered and confirmed — naming it grants
+    nothing on its own — and an unset variable means there is no admin at all.
+  </p>
+  <span class="src">api/app/security/authz.py</span>
+<pre><code>def admin_required(view: Callable) -> Callable:
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        user = require_user()
+        if not is_admin(user) or user.email_verified_at is None:
+            <span class="c"># 404, not 403. A 403 confirms the route exists and that this</span>
+            <span class="c"># account is simply not the one, which is a question nobody who is</span>
+            <span class="c"># not the admin needs answered.</span>
+            raise ApiError("not_found", "Not found.", status=404)
+        return view(*args, **kwargs)</code></pre>
+
+  <h3>What it can reach, and what it cannot</h3>
+  <p>
+    The surface is four routes about codes. There is no user list, no tag list,
+    no scan history and no inbox — issuing a tag to an address is not a route
+    into that account, and there are tests asserting exactly that.
+  </p>
+  <p>
+    A pre-issued claim carries <strong>its own data key</strong>, wrapped by the
+    same keyring that wraps a user's, so the buyer's address and the scan token
+    are encrypted from the moment they are typed. When the address registers,
+    the claim is converted into a tag sealed under the new owner's key and the
+    claim's own copy is destroyed in the same transaction:
+  </p>
+  <span class="src">api/app/services/claims.py</span>
+<pre><code><span class="c"># Nothing readable is left on the claim. The row stays as a record that</span>
+<span class="c"># this code was issued and to whom it went, which the operator needs; the</span>
+<span class="c"># contents belong to the owner now and live under their key alone.</span>
+claim.email_enc = b""
+claim.token_enc = b""
+claim.label_enc = None
+claim.dek_wrapped = b"\x00" * 32</code></pre>
+  <p>
+    After that the operator can see that a code was issued and that it was
+    taken, and nothing else about it. Addresses are masked even before then —
+    the operator typed them, so this is not about secrecy from them, it is
+    about not turning a page left open on a desk into a customer list.
+  </p>
+  <figure>
+    <img src="screenshots/sec-issue.png" alt="The operator page: a form to issue a code, and the printable tag it produces">
+    <figcaption>
+      The whole surface. The scan URL is shown once, at the only moment the
+      operator can print from it; afterwards only the owner can.
+    </figcaption>
+  </figure>
+
+  <h3>One design per traveller, decided early</h3>
+  <p>
+    A tag printed in advance has fixed artwork, which would break the product's
+    central promise if registration then generated a different design. So the
+    claim chooses the seed and the account adopts it — and an address that
+    already has an account keeps <em>its</em> seed, found through a plain
+    column, so a new tag matches the ones already on their bags without the
+    operator's request ever unwrapping that user's data key.
+  </p>
+  <div class="note warn">
+    <strong>Residual, and worth stating.</strong> The operator can address a
+    code to any email. Doing so puts a tag in that person's account when they
+    next look — a tag they did not ask for, which they can delete. That is
+    inherent to pre-issuing and is the reason this surface is limited to one
+    configured address, gated on a confirmed account, and audited on every
+    action.
+  </div>
 </section>
 
 <section id="privacy">

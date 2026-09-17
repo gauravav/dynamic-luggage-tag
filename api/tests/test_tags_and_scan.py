@@ -1010,3 +1010,206 @@ class TestNfcBinding:
         response = self._bind(client, csrf, tag["id"], serial="not-a-serial")
         assert response.status_code == 400
         assert "serial" in response.get_json()["error"]["fields"]
+
+
+class TestPreIssuedTags:
+    """Tags printed and shipped before the buyer has an account.
+
+    The operator creates a code, prints it, and posts it. The account catches
+    up later. Two things have to hold across that gap: the artwork on the
+    printed tag has to be the artwork the account ends up with, and the
+    operator must not gain a route into anybody's data by having issued it.
+    """
+
+    ADMIN = "operator@example.com"
+    BUYER = "buyer@example.com"
+
+    def _admin(self, app, outbox):
+        client = app.test_client()
+        csrf, _ = register_and_sign_in(client, outbox, email=self.ADMIN)
+        return client, csrf
+
+    def _issue(self, client, csrf, email=BUYER, **extra):
+        response = client.post(
+            "/api/v1/admin/claims",
+            json={"email": email, "label": "Ordered tag", **extra},
+            headers=auth_headers(csrf),
+        )
+        assert response.status_code == 201, response.get_json()
+        return response.get_json()["claim"]
+
+    def test_a_pre_issued_tag_lands_in_the_account_that_registers(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf, icon="roller", icon_color="indigo")
+        token = _token_from_url(claim["scan_url"])
+
+        # Scanned before anyone has signed up: honest, and useful.
+        early = app.test_client().get(f"/api/v1/scan/{token}")
+        assert early.status_code == 409
+        assert early.get_json()["error"]["code"] == "tag_not_set_up"
+
+        # The buyer signs up with the address it was issued to.
+        buyer = app.test_client()
+        buyer_csrf, _ = register_and_sign_in(buyer, outbox, email=self.BUYER)
+
+        tags = buyer.get("/api/v1/tags").get_json()["tags"]
+        assert len(tags) == 1
+        assert tags[0]["label"] == "Ordered tag"
+        assert tags[0]["icon"] == "roller"
+
+        # And the code printed on the physical tag is the one that now works.
+        assert app.test_client().get(f"/api/v1/scan/{token}").status_code == 200
+
+    def test_the_printed_artwork_is_the_artwork_the_account_gets(self, client, app, outbox):
+        """The tag went to the printer before the account existed.
+
+        If registration generated a fresh design seed, every pre-printed tag
+        would arrive not matching the account it belongs to.
+        """
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+
+        buyer = app.test_client()
+        register_and_sign_in(buyer, outbox, email=self.BUYER)
+        tag = buyer.get("/api/v1/tags").get_json()["tags"][0]
+
+        assert tag["design"] == claim["design"]
+
+    def test_a_second_tag_for_the_same_address_matches_the_first(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        first = self._issue(admin, admin_csrf)
+        second = self._issue(admin, admin_csrf)
+        assert first["design"] == second["design"]
+
+    def test_a_tag_issued_to_an_existing_account_matches_their_others(self, client, app, outbox):
+        """Their artwork is already decided; a new tag has to match it."""
+        admin, admin_csrf = self._admin(app, outbox)
+        buyer = app.test_client()
+        buyer_csrf, _ = register_and_sign_in(buyer, outbox, email=self.BUYER)
+        theirs = _make_tag(buyer, buyer_csrf, "Existing")
+
+        claim = self._issue(admin, admin_csrf)
+        assert claim["design"] == theirs["design"]
+
+        # And it appears the next time they look at their tags.
+        labels = {tag["label"] for tag in buyer.get("/api/v1/tags").get_json()["tags"]}
+        assert labels == {"Existing", "Ordered tag"}
+
+    def test_the_claim_stops_being_readable_once_it_is_taken(self, client, app, outbox):
+        """A claim is the operator's data only while it has no owner."""
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+
+        listed = admin.get("/api/v1/admin/claims").get_json()["claims"][0]
+        assert listed["claimed"] is False
+        assert listed["email"] and "@" in listed["email"]
+        # Masked even for the operator who typed it.
+        assert self.BUYER not in str(listed)
+
+        register_and_sign_in(app.test_client(), outbox, email=self.BUYER)
+
+        taken = admin.get("/api/v1/admin/claims").get_json()["claims"][0]
+        assert taken["claimed"] is True
+        assert taken["email"] is None
+
+        with app.app_context():
+            from app.extensions import db_session
+            from app.models import TagClaim
+
+            row = db_session().query(TagClaim).one()
+            assert bytes(row.email_enc) == b""
+            assert bytes(row.token_enc) == b""
+            assert bytes(row.dek_wrapped) == b"\x00" * 32
+
+        # The printable PDF goes with it: the owner prints their own now.
+        assert admin.get(f"/api/v1/admin/claims/{claim['id']}/print.pdf").status_code == 409
+
+    def test_a_pre_issued_tag_is_printable_before_anyone_owns_it(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+        response = admin.get(f"/api/v1/admin/claims/{claim['id']}/print.pdf")
+        assert response.status_code == 200
+        assert response.data.startswith(b"%PDF")
+
+    def test_an_unclaimed_code_can_be_withdrawn(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+        token = _token_from_url(claim["scan_url"])
+
+        assert (
+            admin.delete(
+                f"/api/v1/admin/claims/{claim['id']}", headers=auth_headers(admin_csrf)
+            ).status_code
+            == 200
+        )
+        assert app.test_client().get(f"/api/v1/scan/{token}").status_code == 404
+
+    def test_a_claimed_code_cannot_be_withdrawn(self, client, app, outbox):
+        """It belongs to its owner by then, and this is not a route to it."""
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+        register_and_sign_in(app.test_client(), outbox, email=self.BUYER)
+
+        response = admin.delete(
+            f"/api/v1/admin/claims/{claim['id']}", headers=auth_headers(admin_csrf)
+        )
+        assert response.status_code == 409
+
+
+class TestAdminBoundary:
+    """What the operator is, and is not, allowed to reach."""
+
+    ROUTES = (
+        ("get", "/api/v1/admin/claims"),
+        ("get", "/api/v1/admin/summary"),
+    )
+
+    def test_an_ordinary_account_sees_no_admin_surface(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox, email="ordinary@example.com")
+        for method, route in self.ROUTES:
+            response = getattr(client, method)(route)
+            # 404, not 403: a 403 confirms the route exists and that this
+            # account is simply not the one.
+            assert response.status_code == 404, route
+        assert (
+            client.post(
+                "/api/v1/admin/claims",
+                json={"email": "someone@example.com"},
+                headers=auth_headers(csrf),
+            ).status_code
+            == 404
+        )
+
+    def test_a_signed_out_caller_sees_no_admin_surface(self, client):
+        for method, route in self.ROUTES:
+            assert getattr(client, method)(route).status_code in (401, 404), route
+
+    def test_the_session_says_who_is_admin(self, client, app, outbox):
+        ordinary = app.test_client()
+        register_and_sign_in(ordinary, outbox, email="ordinary2@example.com")
+        assert ordinary.get("/api/v1/auth/session").get_json()["user"]["is_admin"] is False
+
+        operator = app.test_client()
+        register_and_sign_in(operator, outbox, email="operator@example.com")
+        assert operator.get("/api/v1/auth/session").get_json()["user"]["is_admin"] is True
+
+    def test_issuing_a_tag_is_not_a_route_into_that_account(self, client, app, outbox):
+        """The operator can address a code to anyone. That is all they can do."""
+        operator = app.test_client()
+        admin_csrf, _ = register_and_sign_in(operator, outbox, email="operator@example.com")
+
+        victim = app.test_client()
+        victim_csrf, _ = register_and_sign_in(victim, outbox, email="victim@example.com")
+        victim_tag = _make_tag(victim, victim_csrf, "Private")
+
+        operator.post(
+            "/api/v1/admin/claims",
+            json={"email": "victim@example.com"},
+            headers=auth_headers(admin_csrf),
+        )
+
+        # No listing of the victim's tags, and no reading of the one they have.
+        assert operator.get(f"/api/v1/tags/{victim_tag['id']}").status_code == 404
+        assert operator.get("/api/v1/tags").get_json()["tags"] == []
+        # And nothing in the admin listing names them.
+        assert "victim@example.com" not in str(operator.get("/api/v1/admin/claims").get_json())

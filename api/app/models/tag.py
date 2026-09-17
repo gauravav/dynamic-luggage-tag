@@ -135,6 +135,58 @@ class Tag(Base):
         return self.revoked_at is None
 
 
+class TagClaim(Base):
+    """A tag pre-issued to an address that may not have an account yet.
+
+    The operator prints and ships physical tags. That happens before the buyer
+    signs up, so the code has to exist — and be printable — while there is
+    still no user to own it, and no data key to seal it under.
+
+    So a claim carries its own data key, wrapped by the same keyring that wraps
+    a user's. When the address registers, the claim is turned into a real Tag
+    sealed under the new owner's key and the claim's own copy is destroyed. A
+    claim is therefore the operator's data for as long as it exists, and the
+    owner's the moment it is theirs.
+
+    ``design_seed`` is the part that makes this work at all: a tag printed in
+    advance has fixed artwork, so the seed is chosen here and the account
+    adopts it at registration. One traveller still means one design — it is
+    just decided a little earlier than usual.
+    """
+
+    __tablename__ = "tag_claims"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+
+    # Looked up at registration, and never stored in the clear.
+    email_bidx: Mapped[bytes] = digest(index=True)
+    email_enc: Mapped[bytes] = ciphertext(nullable=False)
+
+    dek_wrapped: Mapped[bytes] = mapped_column(nullable=False)
+    dek_version: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+
+    token_hash: Mapped[bytes] = digest(unique=True)
+    token_enc: Mapped[bytes] = ciphertext(nullable=False)
+    design_seed: Mapped[bytes] = mapped_column(nullable=False)
+
+    label_enc: Mapped[bytes | None] = ciphertext()
+    icon: Mapped[str | None] = mapped_column(String(24))
+    icon_color: Mapped[str | None] = mapped_column(String(16))
+
+    issued_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = timestamp(default_now=True, nullable=False)
+    claimed_at: Mapped[dt.datetime | None] = timestamp()
+    claimed_tag_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tags.id", ondelete="SET NULL"), nullable=True
+    )
+
+    @property
+    def is_claimed(self) -> bool:
+        return self.claimed_at is not None
+
+
 class RetiredToken(Base):
     """A scan code this tag used to answer to.
 

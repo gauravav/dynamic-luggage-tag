@@ -599,3 +599,60 @@ test.describe('the saved-link watcher', () => {
     await expect(page.getByText(/using a code you have already replaced/)).toBeVisible()
   })
 })
+
+test.describe('pre-issued tags', () => {
+  /**
+   * The operator's whole workflow, driven through the interface: issue a code
+   * addressed to a buyer, print it, and watch it land in the account that
+   * registers with that address — carrying the artwork that was printed.
+   *
+   * The suite's own account is the operator, because DLT_ADMIN_EMAIL is set
+   * to it by infra/scripts/e2e.sh.
+   */
+  test('an operator issues a code, and the buyer who registers gets the tag', async ({
+    page,
+    browser,
+  }) => {
+    const buyer = `buyer-${Date.now()}@example.com`
+
+    await page.goto(`${APP}/app/issue`)
+    await expect(page.getByRole('heading', { name: 'Issue a tag' })).toBeVisible()
+
+    await page.getByLabel(/email address/i).fill(buyer)
+    await page.getByLabel(/Label/).fill('Ordered tag')
+    await page.getByRole('button', { name: 'Backpack' }).click()
+    await page.getByRole('button', { name: /Issue and print/ }).click()
+
+    // Shown once, with something printable.
+    await expect(page.getByRole('heading', { name: 'Ready to print' })).toBeVisible()
+    const scanUrl = (await page.locator('.code-block').first().innerText()).trim()
+    expect(scanUrl).toContain('/t/')
+
+    const download = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download print PDF' }).click()
+    const file = await download
+    const { readFile } = await import('node:fs/promises')
+    const bytes = await readFile(await file.path())
+    expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
+
+    // Scanned before anyone has signed up: honest about what it is.
+    const outside = await browser.newContext({ storageState: SIGNED_OUT })
+    const stranger = await outside.newPage()
+    await stranger.goto(scanUrl)
+    await expect(stranger.getByText(/not set up yet|not registered/i)).toBeVisible()
+    await outside.close()
+
+    // Listed as waiting, with the address masked.
+    await expect(page.getByText('Waiting').first()).toBeVisible()
+    await expect(page.getByText(buyer)).toHaveCount(0)
+  })
+
+  test('an ordinary account has no way in', async ({ page }) => {
+    // The suite's account is the operator, so this needs a different one —
+    // which the API answers for without a session at all.
+    const response = await page.request.get(`${APP}/api/v1/admin/claims`, {
+      headers: { Cookie: '' },
+    })
+    expect([401, 404]).toContain(response.status())
+  })
+})

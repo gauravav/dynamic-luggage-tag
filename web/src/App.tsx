@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { PageLoader } from './components/PageLoader'
+import { Admin } from './pages/Admin'
 import { Dashboard } from './pages/Dashboard'
 import { Inbox } from './pages/Inbox'
 import { Landing } from './pages/Landing'
@@ -60,6 +61,16 @@ export function App() {
           element={
             <RequireUser>
               <Settings />
+            </RequireUser>
+          }
+        />
+        {/* Convenience only, like every other gate here: the server answers
+            404 to anyone but the account named in DLT_ADMIN_EMAIL. */}
+        <Route
+          path="/app/issue"
+          element={
+            <RequireUser>
+              <Admin />
             </RequireUser>
           }
         />

@@ -29,7 +29,14 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 log "Starting the API..."
+# DLT_ADMIN_EMAIL is set from the account global setup registers, so the
+# operator surface exists for the suite to drive. See tests/e2e/global-setup.ts.
+ADMIN_EMAIL="$(cd "$ROOT/web" && node -e '
+try { process.stdout.write(JSON.parse(require("fs").readFileSync("tests/e2e/.auth/account.json","utf8")).email) } catch { process.stdout.write("") }
+')"
+
 ( cd "$ROOT/api" && DLT_MAIL_PROVIDER=console DLT_TURNSTILE_SITE_KEY= DLT_TURNSTILE_SECRET_KEY= \
+    DLT_ADMIN_EMAIL="$ADMIN_EMAIL" \
     exec ./.venv/bin/python -m flask --app app:create_app run --port 5001 >"$API_LOG" 2>&1 ) &
 pids+=($!)
 

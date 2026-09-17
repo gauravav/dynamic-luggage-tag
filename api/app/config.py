@@ -66,6 +66,12 @@ class Config:
     blind_index_key: bytes = field(repr=False, default=b"")
     token_pepper: bytes = field(repr=False, default=b"")
 
+    # The one account allowed to pre-issue tags. Identified by address rather
+    # than by a role column so it cannot be granted from inside the app: an
+    # attacker who reaches the database still cannot make themselves admin
+    # without also editing the environment the process was started with.
+    admin_email: str | None = None
+
     frontend_origin: str = "http://localhost:5173"
     public_base_url: str = "http://localhost:5173"
     cookie_secure: bool = True
@@ -159,6 +165,9 @@ def load_config(overrides: dict | None = None) -> Config:
         token_pepper=(
             overrides.get("token_pepper")
             or _b64key(_required("DLT_TOKEN_PEPPER"), "DLT_TOKEN_PEPPER")
+        ),
+        admin_email=overrides.get(
+            "admin_email", (os.environ.get("DLT_ADMIN_EMAIL") or "").strip() or None
         ),
         frontend_origin=os.environ.get("DLT_FRONTEND_ORIGIN", "http://localhost:5173"),
         public_base_url=os.environ.get("DLT_PUBLIC_BASE_URL", "http://localhost:5173"),
