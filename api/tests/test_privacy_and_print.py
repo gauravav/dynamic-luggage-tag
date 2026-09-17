@@ -214,6 +214,22 @@ class TestPrintGeometry:
         )
         assert print_layout.render(face).startswith(b"%PDF")
 
+    def test_every_symbol_is_well_formed_xml(self):
+        """One malformed symbol is a scan page that will not draw."""
+        import xml.etree.ElementTree as ElementTree
+
+        from app.core import qr
+
+        for url in (
+            "https://example.com/t/" + "a" * 43,
+            "https://example.com/dynamic-luggage-tag/t/" + "z" * 43,
+            "https://example.com/t/short",
+        ):
+            # noqa justified: the input is this module's own output, not a
+            # document from anywhere else.
+            root = ElementTree.fromstring(qr.to_svg(url))  # noqa: S314
+            assert root.get("viewBox"), url
+
     def test_renders_for_every_motif_and_palette(self):
         for motif in design_module.MOTIFS:
             for palette in design_module.PALETTES:

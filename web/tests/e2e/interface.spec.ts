@@ -206,7 +206,7 @@ test.describe('the landing page scenes', () => {
 })
 
 test.describe('downloads', () => {
-  test('the print PDF downloads, and the QR opens', async ({ page, request }) => {
+  test('the print PDF downloads', async ({ page, request }) => {
     const tag = await createTag(page, request)
 
     await page.goto(`${APP}/app/tags/${tag.id}`)
@@ -222,6 +222,42 @@ test.describe('downloads', () => {
     const bytes = await readFile(path)
     expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
     expect(bytes.length).toBeGreaterThan(10_000)
+  })
+
+  /**
+   * The symbol opens in a tab of its own, which means the browser parses it as
+   * an XML document rather than laying it out as part of a page. It shipped
+   * with two viewBox attributes, and every browser refused it outright:
+   * "Attribute viewBox redefined". Nothing short of actually opening it would
+   * have caught that — the response was a perfectly good 200.
+   */
+  test('the QR symbol opens as a drawable document', async ({ page, request }) => {
+    const tag = await createTag(page, request)
+    await page.goto(`${APP}/app/tags/${tag.id}`)
+
+    const opened = page.waitForEvent('popup')
+    await page.getByRole('button', { name: 'QR code only (SVG)' }).click()
+    const symbol = await opened
+
+    await symbol.waitForLoadState('domcontentloaded')
+
+    const drawn = await symbol.evaluate(() => {
+      const root = document.documentElement
+      return {
+        tag: root.tagName.toLowerCase(),
+        viewBox: root.getAttribute('viewBox'),
+        // A parse failure renders as an HTML error document, and the symbol's
+        // own paths are simply not there.
+        paths: document.querySelectorAll('path, rect').length,
+        text: document.body?.textContent ?? '',
+      }
+    })
+
+    expect(drawn.tag).toBe('svg')
+    expect(drawn.viewBox).toBeTruthy()
+    expect(drawn.paths).toBeGreaterThan(0)
+    expect(drawn.text).not.toContain('error')
+    await symbol.close()
   })
 
   test('a failure shows an error instead of navigating away', async ({ page, request }) => {

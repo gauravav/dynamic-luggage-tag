@@ -60,8 +60,30 @@ async function reusableSession(): Promise<boolean> {
   }
 }
 
+/**
+ * Clears the tags left behind by previous runs.
+ *
+ * Each run makes a handful, an account is capped at 25, and the session is
+ * reused — so without this the suite works for three or four runs and then
+ * starts failing on a limit that has nothing to do with what it is testing.
+ */
+async function clearTags(): Promise<void> {
+  const state = JSON.parse(await readFile(STATE_FILE, 'utf8'))
+  const { csrf } = JSON.parse(await readFile(ACCOUNT_FILE, 'utf8'))
+  const context = await request.newContext({
+    storageState: state,
+    extraHTTPHeaders: { Origin: APP, 'X-CSRF-Token': csrf },
+  })
+  const { tags } = await (await context.get(`${API}/tags`)).json()
+  for (const tag of tags) await context.delete(`${API}/tags/${tag.id}`)
+  await context.dispose()
+}
+
 export default async function globalSetup() {
-  if (await reusableSession()) return
+  if (await reusableSession()) {
+    await clearTags()
+    return
+  }
 
   // Absolute URLs, not a baseURL: a leading-slash path would replace the
   // /api/v1 prefix rather than extend it.

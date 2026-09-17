@@ -521,6 +521,26 @@ class TestPrintPdf:
         assert response.mimetype == "image/svg+xml"
         assert b"<svg" in response.data
 
+    def test_qr_svg_is_well_formed_xml(self, client, outbox):
+        """A browser opening the file directly parses it as XML, strictly.
+
+        It used to carry two viewBox attributes — segno's own, plus one this
+        code added — which is not well-formed, so the browser showed a parse
+        error instead of the symbol.
+        """
+        import xml.etree.ElementTree as ElementTree
+
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        body = client.get(f"/api/v1/tags/{tag['id']}/qr.svg").data
+
+        # noqa justified: the body is our own renderer's output.
+        root = ElementTree.fromstring(body)  # noqa: S314
+        assert root.tag == "{http://www.w3.org/2000/svg}svg"
+        # Intrinsic size and a viewBox, so it scales in a flex row.
+        assert root.get("width") and root.get("height")
+        assert root.get("viewBox")
+
 
 class TestTagIcons:
     """The bag icon: a name from a fixed list, drawn onto the printed tag."""

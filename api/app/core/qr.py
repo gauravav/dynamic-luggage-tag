@@ -56,11 +56,13 @@ def to_svg(
         unit=None,
     )
     svg = buffer.getvalue().decode("utf-8")
-    # segno emits no width/height with omitsize; add them plus a viewBox so the
-    # symbol scales cleanly in a flex layout.
-    modules = encode(data).symbol_size(scale=1, border=2)[0]
-    return svg.replace(
-        "<svg ",
-        f'<svg width="{size_px}" height="{size_px}" viewBox="0 0 {modules} {modules}" ',
-        1,
-    )
+    # segno emits no width/height with omitsize, so add them — the symbol has
+    # to have an intrinsic size to lay out in a flex row.
+    attributes = f'width="{size_px}" height="{size_px}"'
+    # It does emit its own viewBox, though. A second one makes the document
+    # ill-formed, and a browser opening the file directly refuses to render it
+    # at all rather than picking one — so only supply it if it is missing.
+    if "viewBox=" not in svg:
+        modules = encode(data).symbol_size(scale=1, border=2)[0]
+        attributes += f' viewBox="0 0 {modules} {modules}"'
+    return svg.replace("<svg ", f"<svg {attributes} ", 1)
