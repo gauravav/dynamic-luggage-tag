@@ -522,6 +522,125 @@ class TestPrintPdf:
         assert b"<svg" in response.data
 
 
+class TestTagIcons:
+    """The bag icon: a name from a fixed list, drawn onto the printed tag."""
+
+    def test_icon_and_colour_round_trip(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        assert tag["icon"] is None and tag["icon_color"] is None
+
+        updated = client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"icon": "backpack", "icon_color": "indigo"},
+            headers=auth_headers(csrf),
+        ).get_json()["tag"]
+        assert (updated["icon"], updated["icon_color"]) == ("backpack", "indigo")
+
+        listed = client.get("/api/v1/tags").get_json()["tags"][0]
+        assert listed["icon"] == "backpack"
+
+    def test_an_icon_without_a_colour_gets_the_default(self, client, outbox):
+        """An icon with no colour behind it would print as nothing at all."""
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        updated = client.patch(
+            f"/api/v1/tags/{tag['id']}", json={"icon": "duffel"}, headers=auth_headers(csrf)
+        ).get_json()["tag"]
+        assert updated["icon_color"] == "ink"
+
+    def test_the_icon_can_be_removed(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        client.patch(f"/api/v1/tags/{tag['id']}", json={"icon": "tote"}, headers=auth_headers(csrf))
+        cleared = client.patch(
+            f"/api/v1/tags/{tag['id']}", json={"icon": None}, headers=auth_headers(csrf)
+        ).get_json()["tag"]
+        assert cleared["icon"] is None
+
+    def test_an_unknown_icon_is_rejected(self, client, outbox):
+        """The name reaches a PDF renderer, so it is never free text."""
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        response = client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"icon": "../../etc/passwd"},
+            headers=auth_headers(csrf),
+        )
+        assert response.status_code == 400
+        assert "icon" in response.get_json()["error"]["fields"]
+
+    def test_an_unknown_colour_is_rejected(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        response = client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"icon": "tote", "icon_color": "#ff0000"},
+            headers=auth_headers(csrf),
+        )
+        assert response.status_code == 400
+
+    def test_the_icon_reaches_the_printed_tag(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        plain = client.get(f"/api/v1/tags/{tag['id']}/print.pdf").data
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"icon": "backpack", "icon_color": "brick"},
+            headers=auth_headers(csrf),
+        )
+        with_icon = client.get(f"/api/v1/tags/{tag['id']}/print.pdf").data
+        assert with_icon.startswith(b"%PDF")
+        assert with_icon != plain
+
+
+class TestScanTokenLookup:
+    """Turning a scanned token back into the owner's own tag."""
+
+    def test_the_owner_resolves_their_own_token(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        token = _token_from_url(tag["scan_url"])
+
+        response = client.post(
+            "/api/v1/tags/lookup", json={"token": token}, headers=auth_headers(csrf)
+        )
+        assert response.status_code == 200
+        assert response.get_json()["tag"]["id"] == tag["id"]
+
+    def test_somebody_elses_token_is_a_plain_not_found(self, client, app, outbox):
+        csrf, _ = register_and_sign_in(client, outbox, email="owner@example.com")
+        tag = _make_tag(client, csrf)
+        token = _token_from_url(tag["scan_url"])
+
+        stranger = app.test_client()
+        stranger_csrf, _ = register_and_sign_in(stranger, outbox, email="stranger@example.com")
+        response = stranger.post(
+            "/api/v1/tags/lookup", json={"token": token}, headers=auth_headers(stranger_csrf)
+        )
+        assert response.status_code == 404
+
+    def test_a_rotated_token_no_longer_resolves(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        old_token = _token_from_url(tag["scan_url"])
+        client.post(f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf))
+
+        response = client.post(
+            "/api/v1/tags/lookup", json={"token": old_token}, headers=auth_headers(csrf)
+        )
+        assert response.status_code == 404
+
+    def test_signing_out_closes_the_lookup(self, client, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        token = _token_from_url(tag["scan_url"])
+        client.post("/api/v1/auth/logout", headers=auth_headers(csrf))
+
+        response = client.post("/api/v1/tags/lookup", json={"token": token})
+        assert response.status_code == 401
+
+
 class TestSecurityHeaders:
     def test_responses_are_hardened(self, client):
         response = client.get("/api/v1/health")
@@ -530,6 +649,22 @@ class TestSecurityHeaders:
         assert response.headers["Referrer-Policy"] == "no-referrer"
         assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
         assert "no-store" in response.headers["Cache-Control"]
+
+    def test_json_responses_are_fully_sandboxed(self, client):
+        policy = client.get("/api/v1/health").headers["Content-Security-Policy"]
+        assert policy.endswith("sandbox")
+
+    def test_downloadable_files_may_be_downloaded(self, client, outbox):
+        """A bare `sandbox` sets the flag that forbids downloads, and Chrome
+        then refuses to save the PDF or render the symbol at all."""
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+
+        for path in (f"/api/v1/tags/{tag['id']}/print.pdf", f"/api/v1/tags/{tag['id']}/qr.svg"):
+            policy = client.get(path).headers["Content-Security-Policy"]
+            assert "sandbox allow-downloads" in policy, path
+            assert "default-src 'none'" in policy, path
+            assert "script-src 'none'" in policy, path
 
     def test_an_unlisted_origin_gets_no_cors_grant(self, client):
         response = client.get("/api/v1/health", headers={"Origin": "https://evil.example"})
