@@ -186,12 +186,28 @@ edge. If your supplier punches differently, change `HOLE_DIAMETER_MM` and
 
 ## Running it for real
 
-Build the frontend and serve `web/dist` from any static host or CDN. Run the
-API under a WSGI server:
+Copy `api/.env.example` to `api/.env.prod` and fill in production values —
+this file is hand-maintained and gitignored, same as `api/.env`. Point
+whatever supervises the process (systemd, in the example below) at it with
+`EnvironmentFile=`:
 
-```bash
-gunicorn --chdir api --workers 4 --bind 127.0.0.1:5001 wsgi:app
+```ini
+# /etc/systemd/system/dynamic-luggage-tag-api.service
+[Service]
+WorkingDirectory=/path/to/dynamic-luggage-tag/api
+EnvironmentFile=/path/to/dynamic-luggage-tag/api/.env.prod
+ExecStart=/path/to/dynamic-luggage-tag/api/.venv/bin/gunicorn --workers 4 --bind 127.0.0.1:5001 wsgi:app
+Restart=on-failure
 ```
+
+`infra/scripts/deploy.sh` (`make deploy`) automates the rest of a deploy on a
+host set up this way: pull the latest commit, install dependencies, run
+migrations against `api/.env.prod`, build `web/dist` (set `VITE_BASE_PATH` if
+the app is mounted under a subpath, e.g. `/dynamic-luggage-tag/`), and restart
+the systemd unit. It's overridable via `DLT_DEPLOY_SERVICE`,
+`DLT_DEPLOY_BASE_PATH`, `DLT_DEPLOY_BRANCH`, `DLT_DEPLOY_RELOAD_NGINX` and
+`DLT_DEPLOY_SKIP_PULL` — see the comment at the top of the script. Serve
+`web/dist` from nginx or any static host/CDN.
 
 Then:
 
@@ -257,6 +273,7 @@ so the real error is in the first few lines of output — usually a missing
 ```bash
 make check              # report the running security posture
 make purge              # delete data past its retention window
+make deploy             # pull, install deps, migrate, build web, restart the service
 make test               # the Python test suite
 make lint               # ruff + tsc
 make secrets-check      # verify no secret is tracked by git

@@ -11,7 +11,7 @@ ALEMBIC := api/.venv/bin/alembic
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv deps db-up db-down db-destroy db-psql db-logs migrate \
-        migration dev api web test lint check purge secrets-check clean
+        migration dev api web test lint check purge secrets-check clean deploy
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -73,9 +73,12 @@ purge: ## Delete data past its retention window
 	@cd api && ./.venv/bin/python -m flask --app app:create_app purge
 
 secrets-check: ## Verify no secret is tracked by git
-	@! git ls-files --error-unmatch .secrets api/.env infra/container/certs 2>/dev/null \
+	@! git ls-files --error-unmatch .secrets api/.env api/.env.prod infra/container/certs 2>/dev/null \
 		&& echo "No secrets are tracked by git." || (echo "A secret is tracked!"; exit 1)
 
 clean: ## Remove build artefacts (keeps data and secrets)
 	@rm -rf web/dist api/.pytest_cache api/.ruff_cache
 	@find api -name __pycache__ -type d -prune -exec rm -rf {} +
+
+deploy: ## Deploy: pull, install deps, migrate, build web, restart the service
+	@./infra/scripts/deploy.sh
