@@ -2,28 +2,46 @@
  * What a stranger sees after scanning a tag.
  *
  * Written for someone standing at a baggage carousel who has never heard of
- * this product: no sign-up prompt, no navigation, no cookie banner, and the
- * one thing they came to find out answered in the first line.
+ * this product: the one thing they came to find out is answered in the first
+ * line, and nothing below it asks them for anything.
+ *
+ * The header is the exception, and it is there for the other person who scans
+ * these tags constantly — the owner. Signed in on this browser, they are sent
+ * straight to the tag's own page instead; signed out, the header is how they
+ * get back to their account at all.
  *
  * Reading this page is a GET with no side effects. Recording the scan is a
  * separate POST fired once the page has actually rendered, so link-preview
- * bots and prefetches never reach the owner's history or inbox.
+ * bots and prefetches never reach the owner's history or inbox — and it is
+ * skipped entirely when the scanner turns out to be the owner, who does not
+ * need an email telling them they just tapped their own bag.
  */
 
 import { motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { ApiError, api, type ScanPage as ScanPageData } from '../api/client'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ApiError, api, type ScanPage as ScanPageData, type Tag } from '../api/client'
+import { SiteHeader } from '../components/Layout'
 import { TagArt } from '../components/TagArt'
 import { MessageSent, PinDrop, SwingingTag } from '../components/illustrations'
 import { BusyLabel, Reveal, SendLabel, Skeleton } from '../components/motion'
 import { Field, Notice } from '../components/ui'
+import { askOpenTabToShow } from '../lib/appTabs'
 import { useTurnstile } from '../lib/turnstile'
+import { useSession } from '../state/session'
+
+/** Who is holding the phone, as far as we can tell. */
+type Scanner = 'unknown' | 'owner' | 'finder'
 
 export function ScanPage() {
   const { token } = useParams<{ token: string }>()
+  const { user, loading: sessionLoading } = useSession()
+  const navigate = useNavigate()
+
   const [data, setData] = useState<ScanPageData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [scanner, setScanner] = useState<Scanner>('unknown')
+  const [handedOffTo, setHandedOffTo] = useState<string | null>(null)
   const recorded = useRef(false)
 
   useEffect(() => {
@@ -33,14 +51,7 @@ export function ScanPage() {
     api
       .get<ScanPageData>(`/scan/${encodeURIComponent(token)}`)
       .then((body) => {
-        if (cancelled) return
-        setData(body)
-        // Fire-and-forget, and only once: StrictMode double-mounts effects in
-        // development, and the owner should not see two scans for one visit.
-        if (!recorded.current) {
-          recorded.current = true
-          void api.post(`/scan/${encodeURIComponent(token)}/view`).catch(() => undefined)
-        }
+        if (!cancelled) setData(body)
       })
       .catch((cause) => {
         if (cancelled) return
@@ -56,46 +67,121 @@ export function ScanPage() {
     }
   }, [token])
 
-  if (error) {
-    return (
-      <div className="page wrap wrap--narrow center">
-        <Reveal>
-        <h1 style={{ fontSize: 26, marginBottom: 10 }}>This tag is not registered</h1>
-        <p className="muted">
-          It may have been deleted, or its code may have been replaced by the owner.
-        </p>
-        </Reveal>
-      </div>
-    )
-  }
+  // Is this one of the signed-in owner's own tags? The lookup only ever
+  // matches their own rows, so a 404 means "not mine" and nothing more.
+  useEffect(() => {
+    if (!token || sessionLoading) return
+    if (!user) {
+      setScanner('finder')
+      return
+    }
+    let cancelled = false
 
-  if (!data || !token) {
-    return (
-      <div className="page wrap wrap--narrow" aria-busy="true" aria-label="Checking this tag">
-        <Skeleton height={150} radius={12} style={{ maxWidth: 210, margin: '0 auto 28px' }} />
-        <Skeleton height={190} radius={12} />
-      </div>
-    )
-  }
+    api
+      .post<{ tag: Tag }>('/tags/lookup', { token })
+      .then(async ({ tag }) => {
+        if (cancelled) return
+        setScanner('owner')
+        if (await askOpenTabToShow(tag.id)) {
+          if (!cancelled) setHandedOffTo(tag.id)
+          return
+        }
+        if (!cancelled) navigate(`/app/tags/${tag.id}?scanned=1`, { replace: true })
+      })
+      .catch(() => {
+        if (!cancelled) setScanner('finder')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, user, sessionLoading, navigate])
+
+  // Recorded once, and only for someone who is not the owner. StrictMode
+  // double-mounts effects in development, and one visit is one scan.
+  useEffect(() => {
+    if (!token || !data || scanner !== 'finder' || recorded.current) return
+    recorded.current = true
+    void api.post(`/scan/${encodeURIComponent(token)}/view`).catch(() => undefined)
+  }, [token, data, scanner])
 
   return (
-    <div className="page wrap wrap--narrow">
-      {/* The tag drops in and swings, as if just turned over in the hand. */}
-      <div style={{ maxWidth: 210, margin: '0 auto 28px' }}>
-        <SwingingTag>
-          <TagArt design={data.design} crest title="The tag you scanned" />
-        </SwingingTag>
+    <div className="shell">
+      <SiteHeader />
+      <main id="main">{renderBody()}</main>
+    </div>
+  )
+
+  function renderBody() {
+    if (error) {
+      return (
+        <div className="page wrap wrap--narrow center">
+          <Reveal>
+            <h1 style={{ fontSize: 26, marginBottom: 10 }}>This tag is not registered</h1>
+            <p className="muted">
+              It may have been deleted, or its code may have been replaced by the owner.
+            </p>
+          </Reveal>
+        </div>
+      )
+    }
+
+    if (handedOffTo) {
+      return <HandedOff tagId={handedOffTo} />
+    }
+
+    if (!data || !token || scanner === 'unknown' || scanner === 'owner') {
+      return (
+        <div className="page wrap wrap--narrow" aria-busy="true" aria-label="Checking this tag">
+          <Skeleton height={150} radius={12} style={{ maxWidth: 210, margin: '0 auto 28px' }} />
+          <Skeleton height={190} radius={12} />
+        </div>
+      )
+    }
+
+    return (
+      <div className="page wrap wrap--narrow">
+        {/* The tag drops in and swings, as if just turned over in the hand. */}
+        <div style={{ maxWidth: 210, margin: '0 auto 28px' }}>
+          <SwingingTag>
+            <TagArt design={data.design} crest title="The tag you scanned" />
+          </SwingingTag>
+        </div>
+
+        {data.status === 'lost' ? (
+          <LostState token={token} data={data} />
+        ) : (
+          <SafeState token={token} data={data} />
+        )}
+
+        <p className="faint center" style={{ marginTop: 32 }}>
+          You do not need an account, and nothing about you is stored unless you choose to share
+          it.
+        </p>
       </div>
+    )
+  }
+}
 
-      {data.status === 'lost' ? (
-        <LostState token={token} data={data} />
-      ) : (
-        <SafeState token={token} data={data} />
-      )}
-
-      <p className="faint center" style={{ marginTop: 32 }}>
-        You do not need an account, and nothing about you is stored unless you choose to share it.
-      </p>
+/**
+ * Shown when an app tab was already open and took the tag.
+ *
+ * A browser will not raise a background tab on our say-so, so the only honest
+ * thing to do is say where it went and offer to show it here instead.
+ */
+function HandedOff({ tagId }: { tagId: string }) {
+  return (
+    <div className="page wrap wrap--narrow center">
+      <Reveal className="card">
+        <h1 style={{ fontSize: 22, marginBottom: 8 }}>Opened in your other tab</h1>
+        <p className="muted">
+          This is your own tag, and you already had the app open — it has moved to this tag there,
+          rather than leaving you with another tab.
+        </p>
+        <Link className="btn btn--ghost btn--sm" to={`/app/tags/${tagId}?scanned=1`}>
+          Show it here instead
+        </Link>
+      </Reveal>
     </div>
   )
 }

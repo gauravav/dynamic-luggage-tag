@@ -105,10 +105,30 @@ export function PinDrop({ size = 28 }: { size?: number }) {
 }
 
 /**
- * Hangs its children from the top like a luggage tag on a strap: drops in and
- * swings to rest, then sways gently. Used for tag artwork.
+ * Hangs its children from the top like a luggage tag on a strap.
+ *
+ * Two movements, nested so they compose: the outer one drops the tag in and
+ * lets it swing to rest, the inner one keeps it swaying gently for as long as
+ * it is on screen — a tag on a bag is never quite still. `excited` swings it
+ * wider, for the tag someone has just tapped a phone against.
+ *
+ * Anyone who asks their OS for reduced motion gets neither: `MotionConfig
+ * reducedMotion="user"` in main.tsx drops both to a fade.
  */
-export function SwingingTag({ children, sway = true, delay = 0 }: { children: ReactNode; sway?: boolean; delay?: number }) {
+export function SwingingTag({
+  children,
+  sway = true,
+  delay = 0,
+  idle = true,
+  excited = false,
+}: {
+  children: ReactNode
+  sway?: boolean
+  delay?: number
+  /** Keeps swaying after it has settled. */
+  idle?: boolean
+  excited?: boolean
+}) {
   return (
     <motion.div
       style={{ transformOrigin: '50% 0%' }}
@@ -120,7 +140,18 @@ export function SwingingTag({ children, sway = true, delay = 0 }: { children: Re
       }
       transition={{ duration: 1.4, ease: 'easeOut', delay, opacity: { duration: 0.25, delay } }}
     >
-      {children}
+      <motion.div
+        style={{ transformOrigin: '50% 0%' }}
+        animate={idle ? { rotate: excited ? [-3.4, 3.4, -3.4] : [-1.3, 1.3, -1.3] } : { rotate: 0 }}
+        transition={{
+          duration: excited ? 1.9 : 5.2,
+          repeat: Infinity,
+          ease: 'easeInOut',
+          delay: delay + (sway ? 1.4 : 0),
+        }}
+      >
+        {children}
+      </motion.div>
     </motion.div>
   )
 }

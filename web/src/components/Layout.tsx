@@ -1,59 +1,33 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api, type ThreadSummary } from '../api/client'
+import { useOpenTagHandoff } from '../lib/appTabs'
 import { useSession } from '../state/session'
 
 export function Layout() {
-  const { user, signOut } = useSession()
+  const { user } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
   const unread = useUnreadCount(Boolean(user), location.pathname)
 
-  async function handleSignOut() {
-    await signOut()
-    navigate('/', { replace: true })
-  }
+  // A tag scanned in another tab is shown here instead of opening yet another
+  // one. Only for signed-in tabs: a signed-out tab has nowhere to show it.
+  useOpenTagHandoff(
+    useCallback(
+      (tagId: string) => {
+        if (user) navigate(`/app/tags/${tagId}?scanned=1`)
+      },
+      [navigate, user],
+    ),
+  )
 
   return (
     <div className={user ? 'shell shell--app' : 'shell'}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <header className="site-header">
-        <div className="site-header__inner">
-          <Link to={user ? '/app' : '/'} className="brand">
-            <motion.span
-              className="brand__mark"
-              aria-hidden="true"
-              whileHover={{ rotate: -8, scale: 1.08 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 12 }}
-            />
-            <span className="brand__name">Dynamic Luggage Tag</span>
-          </Link>
-          <nav className="nav" aria-label="Main">
-            {user ? (
-              // On phones these move to the bottom bar; see BottomNav.
-              <div className="nav__desktop">
-                <TopLink to="/app" end label="Tags" />
-                <TopLink to="/app/inbox" label="Inbox" badge={unread} />
-                <TopLink to="/app/settings" label="Settings" />
-                <button type="button" className="btn btn--quiet" onClick={handleSignOut}>
-                  Sign out
-                </button>
-              </div>
-            ) : (
-              <>
-                <NavLink to="/login">Sign in</NavLink>
-                <Link to="/register" className="btn btn--primary btn--sm">
-                  <span className="only-wide">Create an account</span>
-                  <span className="only-narrow">Sign up</span>
-                </Link>
-              </>
-            )}
-          </nav>
-        </div>
-      </header>
+      <SiteHeader unread={unread} />
 
       <main id="main">
         {/* Keyed on the path, so every page change rises gently into place.
@@ -77,6 +51,61 @@ export function Layout() {
 
       {user && <BottomNav unread={unread} />}
     </div>
+  )
+}
+
+/**
+ * The header, shared by the app shell and the public scan page.
+ *
+ * The scan page used to have none at all, on the theory that a finder should
+ * see nothing that reads as a sign-up funnel. But the person holding the phone
+ * is at least as likely to be the owner checking their own bag, and for them a
+ * page with no way back into the app is a dead end.
+ */
+export function SiteHeader({ unread = 0 }: { unread?: number }) {
+  const { user, signOut } = useSession()
+  const navigate = useNavigate()
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/', { replace: true })
+  }
+
+  return (
+    <header className="site-header">
+      <div className="site-header__inner">
+        <Link to={user ? '/app' : '/'} className="brand">
+          <motion.span
+            className="brand__mark"
+            aria-hidden="true"
+            whileHover={{ rotate: -8, scale: 1.08 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 12 }}
+          />
+          <span className="brand__name">Dynamic Luggage Tag</span>
+        </Link>
+        <nav className="nav" aria-label="Main">
+          {user ? (
+            // On phones these move to the bottom bar; see BottomNav.
+            <div className="nav__desktop">
+              <TopLink to="/app" end label="Tags" />
+              <TopLink to="/app/inbox" label="Inbox" badge={unread} />
+              <TopLink to="/app/settings" label="Settings" />
+              <button type="button" className="btn btn--quiet" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <>
+              <NavLink to="/login">Sign in</NavLink>
+              <Link to="/register" className="btn btn--primary btn--sm">
+                <span className="only-wide">Create an account</span>
+                <span className="only-narrow">Sign up</span>
+              </Link>
+            </>
+          )}
+        </nav>
+      </div>
+    </header>
   )
 }
 

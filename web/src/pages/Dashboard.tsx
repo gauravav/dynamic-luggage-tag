@@ -1,13 +1,19 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api, type Tag } from '../api/client'
 import { SwingingTag } from '../components/illustrations'
-import { Skeleton } from '../components/motion'
+import { BusyLabel, Skeleton } from '../components/motion'
 import { TagArt } from '../components/TagArt'
 import { Empty, Notice, StatusPill } from '../components/ui'
 import { FALLBACK_DESIGN, describe, formatDate, relativeTime } from '../lib/design'
+import { NfcError, nfcSupported, readChip } from '../lib/nfc'
 import { useSession } from '../state/session'
+
+/** How long an identified tag keeps swinging before it settles back. */
+const IDENTIFIED_MS = 9000
+
+type Lookup = { registered: 'none' } | { registered: 'other' } | { registered: 'mine'; tag: Tag }
 
 export function Dashboard() {
   const { user } = useSession()
@@ -16,6 +22,11 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false)
   // The tag just created, so only it plays the "printing" entrance.
   const [newTagId, setNewTagId] = useState<string | null>(null)
+  // The tag an NFC sticker was just held against, so it can say which bag it is.
+  const [identified, setIdentified] = useState<string | null>(null)
+  const [identifying, setIdentifying] = useState(false)
+  const [identifyNote, setIdentifyNote] = useState<{ kind: 'info' | 'warn' | 'error'; text: string } | null>(null)
+  const cards = useRef(new Map<string, HTMLElement>())
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +57,52 @@ export function Dashboard() {
     }
   }
 
+  /**
+   * Answers "which of these is the bag in my hand?".
+   *
+   * Reading the chip gives a serial; the server maps it to a tag of the
+   * owner's, and the matching card scrolls into view and swings. A chip that
+   * belongs to nobody, or to somebody else, is reported as such and nothing
+   * is highlighted.
+   */
+  async function identify() {
+    setIdentifyNote(null)
+    setIdentified(null)
+    setIdentifying(true)
+    try {
+      const chip = await readChip()
+      const found = await api.post<Lookup>('/tags/nfc/lookup', { serial: chip.serial })
+      if (found.registered === 'none') {
+        setIdentifyNote({ kind: 'warn', text: 'That NFC sticker is not linked to any tag yet.' })
+        return
+      }
+      if (found.registered === 'other') {
+        setIdentifyNote({ kind: 'error', text: 'That NFC sticker is registered to another account.' })
+        return
+      }
+      setIdentified(found.tag.id)
+      setIdentifyNote({
+        kind: 'info',
+        text: `That is “${found.tag.label ?? 'Untitled tag'}”.`,
+      })
+      // Wait a frame so a card that has only just been highlighted exists.
+      window.requestAnimationFrame(() => {
+        cards.current.get(found.tag.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      window.setTimeout(() => setIdentified(null), IDENTIFIED_MS)
+    } catch (cause) {
+      setIdentifyNote({
+        kind: 'error',
+        text:
+          cause instanceof NfcError || cause instanceof ApiError
+            ? cause.message
+            : 'Could not read that NFC sticker.',
+      })
+    } finally {
+      setIdentifying(false)
+    }
+  }
+
   const lostCount = tags?.filter((tag) => tag.status === 'lost').length ?? 0
 
   return (
@@ -55,23 +112,43 @@ export function Dashboard() {
           <p className="kicker">your tags</p>
           <h1>{user?.name ? `Hello, ${user.name.split(' ')[0]}.` : 'Your luggage'}</h1>
         </div>
-        <button type="button" className="btn btn--primary" onClick={createTag} disabled={creating}>
-          <motion.svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            aria-hidden="true"
-            // The plus turns while the tag is being made, and settles back after.
-            animate={{ rotate: creating ? 180 : 0, scale: creating ? 0.85 : 1 }}
-            transition={creating ? { duration: 0.6, repeat: Infinity, ease: 'linear' } : { type: 'spring', stiffness: 300, damping: 18 }}
-          >
-            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-          </motion.svg>
-          {creating ? 'Adding…' : 'Add a tag'}
-        </button>
+        <div className="row">
+          {nfcSupported() && (tags?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={identify}
+              disabled={identifying}
+            >
+              <NfcWaves active={identifying} />
+              <BusyLabel busy={identifying} idle="Identify a tag" working="Hold it against the phone…" />
+            </button>
+          )}
+          <button type="button" className="btn btn--primary" onClick={createTag} disabled={creating}>
+            <motion.svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+              // The plus turns while the tag is being made, and settles back after.
+              animate={{ rotate: creating ? 180 : 0, scale: creating ? 0.85 : 1 }}
+              transition={creating ? { duration: 0.6, repeat: Infinity, ease: 'linear' } : { type: 'spring', stiffness: 300, damping: 18 }}
+            >
+              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+            </motion.svg>
+            {creating ? 'Adding…' : 'Add a tag'}
+          </button>
+        </div>
       </div>
 
-      <AnimatePresence>{error && <Notice key="error">{error}</Notice>}</AnimatePresence>
+      <AnimatePresence>
+        {error && <Notice key="error">{error}</Notice>}
+        {identifyNote && (
+          <Notice key={`identify-${identifyNote.text}`} kind={identifyNote.kind}>
+            {identifyNote.text}
+          </Notice>
+        )}
+      </AnimatePresence>
 
       {!user?.email_verified && (
         <Notice kind="warn">
@@ -126,10 +203,15 @@ export function Dashboard() {
           <AnimatePresence initial={true}>
             {tags.map((tag, index) => {
               const isNew = tag.id === newTagId
+              const isIdentified = tag.id === identified
               return (
                 <motion.article
                   key={tag.id}
-                  className="tag-card"
+                  ref={(node: HTMLElement | null) => {
+                    if (node) cards.current.set(tag.id, node)
+                    else cards.current.delete(tag.id)
+                  }}
+                  className={`tag-card${isIdentified ? ' tag-card--identified' : ''}`}
                   layout
                   // A new tag "prints": it feeds down out of a slot from the
                   // top, then swings on its strap. The rest cascade in on load
@@ -151,7 +233,7 @@ export function Dashboard() {
                   }}
                 >
                   <Link to={`/app/tags/${tag.id}`} className="tag-card__art" style={{ display: 'block' }}>
-                    <SwingingTag sway={isNew} delay={isNew ? 0.55 : 0}>
+                    <SwingingTag sway={isNew} delay={isNew ? 0.55 : 0} excited={isIdentified}>
                       <motion.div
                         className="lift"
                         whileHover={{ rotate: -1.5 }}
@@ -162,6 +244,8 @@ export function Dashboard() {
                           design={tag.design}
                           name={user?.name ?? null}
                           subtitle={tag.label}
+                          icon={tag.icon}
+                          iconColor={tag.icon_color}
                           title={`${tag.label ?? 'Tag'} — ${describe(tag.design)}`}
                         />
                       </motion.div>
@@ -185,5 +269,30 @@ export function Dashboard() {
         </motion.div>
       )}
     </div>
+  )
+}
+
+/** Three arcs radiating from a phone: the NFC field, pulsing while it reads. */
+function NfcWaves({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="btn__icon">
+      {[0, 1, 2].map((index) => (
+        <motion.path
+          key={index}
+          d={['M9 8a6 6 0 0 1 0 8', 'M13 5a11 11 0 0 1 0 14', 'M17 2a16 16 0 0 1 0 20'][index]}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          animate={active ? { opacity: [0.25, 1, 0.25] } : { opacity: 1 }}
+          transition={
+            active
+              ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut', delay: index * 0.18 }
+              : { duration: 0.2 }
+          }
+        />
+      ))}
+      <circle cx="5.5" cy="12" r="1.7" fill="currentColor" />
+    </svg>
   )
 }
