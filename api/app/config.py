@@ -95,6 +95,7 @@ class Config:
     audit_retention_days: int = 365
     scan_dedup_minutes: int = 10
     scan_notify_cooldown_minutes: int = 30
+    relay_notify_cooldown_minutes: int = 10
 
     ratelimit_storage_uri: str = "memory://"
     trusted_proxy_hops: int = 0
@@ -181,6 +182,7 @@ def load_config(overrides: dict | None = None) -> Config:
         audit_retention_days=_int("DLT_AUDIT_RETENTION_DAYS", 365),
         scan_dedup_minutes=_int("DLT_SCAN_DEDUP_MINUTES", 10),
         scan_notify_cooldown_minutes=_int("DLT_SCAN_NOTIFY_COOLDOWN_MINUTES", 30),
+        relay_notify_cooldown_minutes=_int("DLT_RELAY_NOTIFY_COOLDOWN_MINUTES", 10),
         ratelimit_storage_uri=os.environ.get("DLT_RATELIMIT_STORAGE_URI", "memory://"),
         trusted_proxy_hops=_int("DLT_TRUSTED_PROXY_HOPS", 0),
         max_content_length=_int("DLT_MAX_CONTENT_LENGTH", 64 * 1024),

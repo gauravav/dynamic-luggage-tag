@@ -220,6 +220,8 @@ class ScanLocationIn(Payload):
 class FinderMessageIn(Payload):
     body: str = Field(min_length=1, max_length=2000)
     contact: str | None = Field(default=None, max_length=120)
+    # Where to send the conversation link and reply notices. Never shown to the owner.
+    email: EmailStr | None = Field(default=None, max_length=254)
 
 
 class RelayReplyIn(Payload):

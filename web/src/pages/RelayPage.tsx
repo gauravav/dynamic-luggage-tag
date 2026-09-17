@@ -56,6 +56,22 @@ export function RelayPage() {
     }
   }
 
+  async function stopEmails() {
+    if (!token) return
+    setBusy(true)
+    setError(null)
+    try {
+      const body = await api.delete<{ thread: RelayThread }>(
+        `/relay/${encodeURIComponent(token)}/email`,
+      )
+      setThread(body.thread)
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not turn off email updates.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (error && !thread) {
     return (
       <div className="page wrap wrap--narrow center">
@@ -85,6 +101,20 @@ export function RelayPage() {
       </p>
 
       {error && <Notice>{error}</Notice>}
+
+      {thread.email_updates && (
+        <div className="row row--between panel" style={{ marginBottom: 16 }}>
+          <span className="faint">We email you when the owner replies.</span>
+          <button
+            type="button"
+            className="btn btn--quiet btn--sm"
+            onClick={stopEmails}
+            disabled={busy}
+          >
+            Stop email updates
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <div className="thread" style={{ marginBottom: thread.closed ? 0 : 18 }}>

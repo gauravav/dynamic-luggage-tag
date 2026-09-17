@@ -290,6 +290,9 @@ def send_message(token: str):
     # the database, so no flush is needed — and flushing first would try to
     # insert a NOT NULL ciphertext column that has not been filled in yet.
     crypto.write_thread(thread, "finder_contact", payload.contact or None)
+    if payload.email:
+        crypto.write_thread(thread, "finder_email", payload.email)
+        crypto.write_thread(thread, "finder_token", relay_token)
     db.add(thread)
 
     message = RelayMessage(
@@ -305,19 +308,23 @@ def send_message(token: str):
         subject_user_id=owner.id,
         tag_id=tag.id,
         actor_type="anonymous",
-        detail={"has_contact": bool(payload.contact)},
+        detail={"has_contact": bool(payload.contact), "email_updates": bool(payload.email)},
     )
     db.commit()
 
-    notifications.notify_relay_message(
-        current_app.extensions["mailer"], user=owner, crypto=crypto, config=config
-    )
+    mailer = current_app.extensions["mailer"]
+    notifications.notify_relay_message(mailer, user=owner, crypto=crypto, config=config)
+    if payload.email:
+        notifications.notify_finder_opened(
+            mailer, thread=thread, crypto=crypto, relay_token=relay_token, config=config
+        )
 
     return jsonify(
         {
             "status": "sent",
             "relay_token": relay_token,
             "expires_at": thread.expires_at.isoformat(),
+            "email_updates": bool(payload.email),
         }
     ), 201
 

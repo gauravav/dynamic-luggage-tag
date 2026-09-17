@@ -339,6 +339,109 @@ class TestRelay:
         assert response.status_code == 409
 
 
+class TestFinderEmailUpdates:
+    """A finder who leaves an email gets the link and reply notices; the owner never sees it."""
+
+    FINDER = "finder@example.net"
+
+    def _open(self, client, app, outbox, **extra):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = TestRelay()._lost_tag(client, csrf)
+        outbox.clear()
+        finder = app.test_client()
+        opened = finder.post(
+            f"/api/v1/scan/{_token_from_url(tag['scan_url'])}/message",
+            json={"body": "Found this at DFW baggage claim 3.", **extra},
+        )
+        assert opened.status_code == 201, opened.get_json()
+        thread_id = client.get("/api/v1/threads").get_json()["threads"][0]["id"]
+        return csrf, finder, opened.get_json(), thread_id
+
+    def _reply(self, client, csrf, thread_id, body="Thank you!"):
+        response = client.post(
+            f"/api/v1/threads/{thread_id}/reply", json={"body": body}, headers=auth_headers(csrf)
+        )
+        assert response.status_code == 201
+        return response.get_json()["thread"]
+
+    def test_finder_is_emailed_the_link_and_owner_replies(self, client, app, outbox):
+        csrf, finder, opened, thread_id = self._open(client, app, outbox, email=self.FINDER)
+        relay_token = opened["relay_token"]
+        assert opened["email_updates"] is True
+
+        to_finder = [mail for mail in outbox if mail["to"] == self.FINDER]
+        assert len(to_finder) == 1
+        assert f"/r/{relay_token}" in to_finder[0]["body"]
+        assert "DFW" not in to_finder[0]["body"]
+
+        outbox.clear()
+        self._reply(client, csrf, thread_id, body="I will come to claim 3.")
+        assert len(outbox) == 1
+        assert outbox[0]["to"] == self.FINDER
+        assert f"/r/{relay_token}" in outbox[0]["body"]
+        # The reply stays behind the link.
+        assert "claim 3" not in outbox[0]["body"]
+
+    def test_the_owner_never_sees_the_finders_email(self, client, app, outbox):
+        csrf, _, _, thread_id = self._open(client, app, outbox, email=self.FINDER)
+        thread = client.get(f"/api/v1/threads/{thread_id}").get_json()["thread"]
+        assert thread["email_updates"] is True
+        assert self.FINDER not in str(thread)
+        assert self.FINDER not in str(client.get("/api/v1/threads").get_json())
+        assert self.FINDER not in client.get("/api/v1/account/export").get_data(as_text=True)
+
+        with app.app_context():
+            from app.extensions import db_session
+            from app.models import RelayThread
+
+            stored = db_session().query(RelayThread).one()
+            assert self.FINDER.encode() not in bytes(stored.finder_email_enc)
+
+    def test_reply_emails_respect_the_cooldown(self, client, app, outbox):
+        csrf, _, _, thread_id = self._open(client, app, outbox, email=self.FINDER)
+        outbox.clear()
+        self._reply(client, csrf, thread_id, body="First")
+        self._reply(client, csrf, thread_id, body="Second")
+        assert len(outbox) == 1
+
+    def test_no_email_means_no_finder_mail(self, client, app, outbox):
+        csrf, _, opened, thread_id = self._open(client, app, outbox)
+        assert opened["email_updates"] is False
+        # Only the owner's own notice went out.
+        assert all(mail["to"] != self.FINDER for mail in outbox)
+        outbox.clear()
+        self._reply(client, csrf, thread_id)
+        assert outbox == []
+
+    def test_finder_can_stop_email_updates(self, client, app, outbox):
+        csrf, finder, opened, thread_id = self._open(client, app, outbox, email=self.FINDER)
+        response = finder.delete(f"/api/v1/relay/{opened['relay_token']}/email")
+        assert response.status_code == 200
+        assert response.get_json()["thread"]["email_updates"] is False
+
+        with app.app_context():
+            from app.extensions import db_session
+            from app.models import RelayThread
+
+            stored = db_session().query(RelayThread).one()
+            assert stored.finder_email_enc is None
+            assert stored.finder_token_enc is None
+
+        outbox.clear()
+        self._reply(client, csrf, thread_id)
+        assert outbox == []
+
+    def test_rejects_an_invalid_email(self, client, app, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = TestRelay()._lost_tag(client, csrf)
+        response = app.test_client().post(
+            f"/api/v1/scan/{_token_from_url(tag['scan_url'])}/message",
+            json={"body": "Found it", "email": "not an email"},
+        )
+        assert response.status_code == 400
+        assert "email" in response.get_json()["error"]["fields"]
+
+
 class TestAccount:
     def test_export_includes_everything_and_is_an_attachment(self, client, app, outbox):
         csrf, _ = register_and_sign_in(client, outbox)

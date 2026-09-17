@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..config import Config
-from ..models import ScanEvent, Tag, User, utcnow
+from ..models import RelayThread, ScanEvent, Tag, User, utcnow
 from ..security.pii import UserCrypto
 from .email_templates import Email, render_html, render_text
 from .geo import CoarseLocation
@@ -262,6 +262,46 @@ def relay_message_email(config: Config) -> Email:
     )
 
 
+def finder_conversation_email(config: Config, relay_token: str) -> Email:
+    """Sent to a finder who left an email address, right after their first message."""
+    return Email(
+        subject="Your conversation about a found bag",
+        heading="Thank you for helping a bag get home",
+        preheader="Keep this email: it has your link back to the conversation.",
+        paragraphs=[
+            "Your message was delivered, and the owner of the bag has been notified.",
+            "Use the link below to read their reply and answer. It is the only way "
+            "back into the conversation, so keep this email. We will also email "
+            "you here when the owner replies.",
+            "The owner never sees this email address.",
+        ],
+        button=("Open the conversation", _url(config, f"/r/{relay_token}")),
+        footnote=(
+            "If you did not send a message about a lost bag, someone typed your "
+            "address by mistake. Open the link and choose “Stop email updates” "
+            "and we will not write again."
+        ),
+        accent="forest",
+    )
+
+
+def finder_reply_email(config: Config, relay_token: str) -> Email:
+    # As with the owner's notice, the reply itself stays behind the link: the
+    # owner wrote it for the conversation, not for a lock-screen preview.
+    return Email(
+        subject="The owner replied about the bag you found",
+        heading="The owner replied",
+        preheader="Open the conversation to read it.",
+        paragraphs=[
+            "The owner of the bag you found has replied to your message.",
+            "Open the conversation to read it and answer. They still never see your email address.",
+        ],
+        button=("Read the reply", _url(config, f"/r/{relay_token}")),
+        footnote=("To stop these emails, open the conversation and choose “Stop email updates”."),
+        accent="forest",
+    )
+
+
 # --------------------------------------------------------------------------
 # Senders that need a decrypted address
 # --------------------------------------------------------------------------
@@ -288,3 +328,33 @@ def notify_relay_message(mailer: Mailer, *, user: User, crypto: UserCrypto, conf
     if not address:
         return False
     return deliver(mailer, address, relay_message_email(config))
+
+
+def notify_finder_opened(
+    mailer: Mailer, *, thread: RelayThread, crypto: UserCrypto, relay_token: str, config: Config
+) -> bool:
+    address = crypto.read_thread(thread, "finder_email")
+    if not address:
+        return False
+    return deliver(mailer, address, finder_conversation_email(config, relay_token))
+
+
+def notify_finder_reply(
+    mailer: Mailer, *, thread: RelayThread, crypto: UserCrypto, config: Config
+) -> bool:
+    """Tells a subscribed finder the owner replied, at most once per cooldown.
+
+    The cooldown turns a burst of short replies into one email: the link opens
+    the whole conversation, so a second email adds nothing.
+    """
+    if thread.finder_email_enc is None or thread.finder_token_enc is None:
+        return False
+    if thread.finder_notified_at is not None:
+        cooldown = dt.timedelta(minutes=config.relay_notify_cooldown_minutes)
+        if utcnow() - thread.finder_notified_at < cooldown:
+            return False
+    address = crypto.read_thread(thread, "finder_email")
+    relay_token = crypto.read_thread(thread, "finder_token")
+    if not address or not relay_token:
+        return False
+    return deliver(mailer, address, finder_reply_email(config, relay_token))

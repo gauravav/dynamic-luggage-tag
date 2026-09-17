@@ -147,6 +147,16 @@ class RelayThread(Base):
     # personal field. Shown to the owner only, and only as the finder typed it.
     finder_contact_enc: Mapped[bytes | None] = ciphertext()
 
+    # An email address the finder gave to receive the conversation link and a
+    # note when the owner replies. Unlike finder_contact it is never shown to
+    # the owner: it exists so the finder can follow the thread, not so the
+    # owner can reach them. The relay token is kept alongside, sealed, only
+    # while email updates are on, because the reply email has to carry the
+    # link and the token is otherwise stored as a hash alone.
+    finder_email_enc: Mapped[bytes | None] = ciphertext()
+    finder_token_enc: Mapped[bytes | None] = ciphertext()
+    finder_notified_at: Mapped[dt.datetime | None] = timestamp()
+
     created_at: Mapped[dt.datetime] = timestamp(default_now=True, nullable=False)
     last_message_at: Mapped[dt.datetime] = timestamp(default_now=True, nullable=False)
     expires_at: Mapped[dt.datetime] = timestamp(nullable=False, index=True)

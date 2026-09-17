@@ -173,6 +173,8 @@ export interface RelayThread {
   opened_at: string
   expires_at: string
   closed: boolean
+  /** Whether the finder is emailed when the owner replies. Never the address itself. */
+  email_updates: boolean
   messages: RelayMessage[]
   finder_contact?: string | null
   tag_id?: string

@@ -129,6 +129,12 @@ def reply_as_owner(thread_id: str):
         detail={"sender": "owner"},
     )
     db.commit()
+
+    if notifications.notify_finder_reply(
+        current_app.extensions["mailer"], thread=thread, crypto=crypto, config=app_config()
+    ):
+        thread.finder_notified_at = utcnow()
+        db.commit()
     return jsonify({"thread": _serialize_thread(thread, crypto, viewer="owner")}), 201
 
 
@@ -190,6 +196,23 @@ def reply_as_finder(relay_token: str):
     return jsonify({"thread": _serialize_thread(thread, crypto, viewer="finder")}), 201
 
 
+@bp.delete("/relay/<relay_token>/email")
+@limiter.limit("20 per hour")
+def stop_finder_email(relay_token: str):
+    """Turns off email updates and forgets the address.
+
+    Reachable from the link in every email, so someone whose address was typed
+    by mistake can stop the mail without an account.
+    """
+    thread, owner, crypto = _resolve_relay(relay_token)
+    db = db_session()
+    thread.finder_email_enc = None
+    thread.finder_token_enc = None
+    thread.finder_notified_at = None
+    db.commit()
+    return jsonify({"thread": _serialize_thread(thread, crypto, viewer="finder")})
+
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
@@ -244,6 +267,8 @@ def _serialize_thread(thread: RelayThread, crypto: UserCrypto, *, viewer: str) -
         "opened_at": thread.created_at.isoformat(),
         "expires_at": thread.expires_at.isoformat(),
         "closed": thread.closed_at is not None,
+        # Whether the finder is emailed when the owner replies. Never the address.
+        "email_updates": thread.finder_email_enc is not None,
         "messages": [
             {
                 "id": str(message.id),

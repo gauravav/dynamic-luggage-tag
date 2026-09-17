@@ -219,7 +219,9 @@ function LocationShare({ token, retentionDays }: { token: string; retentionDays:
 function MessageForm({ token }: { token: string }) {
   const [body, setBody] = useState('')
   const [contact, setContact] = useState('')
+  const [email, setEmail] = useState('')
   const [relayToken, setRelayToken] = useState<string | null>(null)
+  const [emailed, setEmailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -228,8 +230,10 @@ function MessageForm({ token }: { token: string }) {
       <div className="card">
         <h3 style={{ marginBottom: 8 }}>Message sent</h3>
         <p className="muted">
-          The owner has been notified. Keep this link to see their reply — it is the only way back
-          to this conversation, and it needs no account.
+          The owner has been notified.{' '}
+          {emailed
+            ? 'We emailed you this link, and will email you again when they reply.'
+            : 'Keep this link to see their reply — it is the only way back to this conversation, and it needs no account.'}
         </p>
         <p className="code-block">{`${window.location.origin}/r/${relayToken}`}</p>
         <a className="btn btn--ghost btn--sm" href={`/r/${relayToken}`}>
@@ -244,10 +248,11 @@ function MessageForm({ token }: { token: string }) {
     setBusy(true)
     setError(null)
     try {
-      const response = await api.post<{ relay_token: string }>(
+      const response = await api.post<{ relay_token: string; email_updates: boolean }>(
         `/scan/${encodeURIComponent(token)}/message`,
-        { body: body.trim(), contact: contact.trim() || null },
+        { body: body.trim(), contact: contact.trim() || null, email: email.trim() || null },
       )
+      setEmailed(response.email_updates)
       setRelayToken(response.relay_token)
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not send that message.')
@@ -276,12 +281,22 @@ function MessageForm({ token }: { token: string }) {
           required
         />
         <Field
+          label="Your email, for replies (optional)"
+          name="email"
+          type="email"
+          value={email}
+          onChange={setEmail}
+          maxLength={254}
+          autoComplete="email"
+          hint="We email you the conversation link and let you know when the owner replies. The owner never sees this address."
+        />
+        <Field
           label="How they could reach you (optional)"
           name="contact"
           value={contact}
           onChange={setContact}
           maxLength={120}
-          hint="Only if you want to. Leave it blank and the conversation stays entirely inside this app."
+          hint="Shown to the owner. Only if you want to. Leave it blank and the conversation stays entirely inside this app."
         />
         <button type="submit" className="btn btn--danger" disabled={busy || !body.trim()}>
           {busy ? 'Sending…' : 'Send message'}

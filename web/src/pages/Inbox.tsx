@@ -119,6 +119,11 @@ export function Inbox() {
                     They left a way to reach them: {openThread.finder_contact}
                   </Notice>
                 )}
+                {openThread.email_updates && !openThread.closed && (
+                  <p className="faint">
+                    They get an email when you reply. Their address stays hidden from you.
+                  </p>
+                )}
                 <div className="thread" style={{ marginBottom: 16 }}>
                   {openThread.messages.map((message) => (
                     <div
