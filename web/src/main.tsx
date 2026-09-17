@@ -1,3 +1,4 @@
+import { MotionConfig } from 'motion/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
@@ -12,7 +13,11 @@ createRoot(container).render(
   <StrictMode>
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <SessionProvider>
-        <App />
+        {/* reducedMotion="user": people who ask their OS for less motion get
+            instant changes with fades only, everywhere, without per-component checks. */}
+        <MotionConfig reducedMotion="user">
+          <App />
+        </MotionConfig>
       </SessionProvider>
     </BrowserRouter>
   </StrictMode>,

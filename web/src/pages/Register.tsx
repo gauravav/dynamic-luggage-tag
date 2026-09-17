@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../api/client'
+import { MailSent } from '../components/illustrations'
+import { BusyLabel, Reveal } from '../components/motion'
+import { PasswordField } from '../components/PasswordStrength'
 import { Field, Notice } from '../components/ui'
 import { useTurnstile } from '../lib/turnstile'
 
@@ -46,19 +49,26 @@ export function Register() {
   if (done) {
     return (
       <div className="page wrap wrap--narrow">
-        <p className="kicker">check your inbox</p>
-        <h1 style={{ fontSize: 28 }}>Confirm your email address</h1>
-        <p className="muted">
-          If that address can receive mail, a confirmation link is on its way. It is valid for 24
-          hours.
-        </p>
-        <Notice kind="info">
-          Your account is not active until you follow that link. Nothing is published anywhere in
-          the meantime.
-        </Notice>
-        <Link to="/login" className="btn btn--ghost">
-          Back to sign in
-        </Link>
+        <div style={{ marginBottom: 12 }}>
+          <MailSent />
+        </div>
+        <Reveal delay={0.35}>
+          <p className="kicker">check your inbox</p>
+          <h1 style={{ fontSize: 28 }}>Confirm your email address</h1>
+          <p className="muted">
+            If that address can receive mail, a confirmation link is on its way. It is valid for 24
+            hours.
+          </p>
+        </Reveal>
+        <Reveal delay={0.5}>
+          <Notice kind="info">
+            Your account is not active until you follow that link. Nothing is published anywhere in
+            the meantime.
+          </Notice>
+          <Link to="/login" className="btn btn--ghost">
+            Back to sign in
+          </Link>
+        </Reveal>
       </div>
     )
   }
@@ -94,15 +104,12 @@ export function Register() {
           hint="Shown to a finder only when you report a bag lost. You can add it later."
           autoComplete="name"
         />
-        <Field
-          label="Password"
+        <PasswordField
           name="password"
-          type="password"
           value={password}
           onChange={setPassword}
           error={errors.password}
-          hint="At least 12 characters. A few unrelated words beats a short, clever one."
-          autoComplete="new-password"
+          context={[email, name]}
           required
         />
         {turnstile.widget}
@@ -112,7 +119,7 @@ export function Register() {
           className="btn btn--primary btn--block"
           disabled={busy || !turnstile.ready}
         >
-          {busy ? 'Creating…' : 'Create account'}
+          <BusyLabel busy={busy} idle="Create account" working="Creating…" />
         </button>
       </form>
 

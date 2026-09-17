@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, api, type User } from '../api/client'
+import { MailSent } from '../components/illustrations'
 import { Notice } from '../components/ui'
 import { useSession } from '../state/session'
 
@@ -52,9 +53,10 @@ export function VerifyEmail() {
           </Link>
         </>
       ) : (
-        <p className="row">
-          <span className="spinner" aria-hidden="true" /> Confirming&#8230;
-        </p>
+        <div className="row">
+          <MailSent size={72} />
+          <span className="muted">Confirming your address&#8230;</span>
+        </div>
       )}
     </div>
   )

@@ -1,6 +1,8 @@
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, type RelayThread, type ThreadSummary } from '../api/client'
-import { Empty, Field, Notice, Spinner } from '../components/ui'
+import { SendLabel, Skeleton } from '../components/motion'
+import { Empty, Field, Notice } from '../components/ui'
 import { formatDateTime, relativeTime } from '../lib/design'
 
 export function Inbox() {
@@ -64,10 +66,17 @@ export function Inbox() {
         </p>
       </div>
 
-      {error && <Notice>{error}</Notice>}
+      <AnimatePresence>{error && <Notice key={error}>{error}</Notice>}</AnimatePresence>
 
       {threads === null ? (
-        <Spinner label="Loading messages" />
+        <div className="grid grid--split" style={{ alignItems: 'start' }} aria-busy="true" aria-label="Loading messages">
+          <div className="card stack">
+            <Skeleton height={54} />
+            <Skeleton height={54} />
+            <Skeleton height={54} />
+          </div>
+          <Skeleton height={240} radius={12} />
+        </div>
       ) : threads.length === 0 ? (
         <div className="card">
           <Empty title="No messages">
@@ -77,10 +86,19 @@ export function Inbox() {
           </Empty>
         </div>
       ) : (
-        <div className="grid grid--split" style={{ alignItems: 'start' }}>
-          <ul className="list card">
-            {threads.map((thread) => (
-              <li key={thread.id} className="list__item">
+        <div
+          className={`grid grid--split inbox${openThread ? ' inbox--reading' : ''}`}
+          style={{ alignItems: 'start' }}
+        >
+          <ul className="list card inbox__list">
+            {threads.map((thread, index) => (
+              <motion.li
+                key={thread.id}
+                className="list__item"
+                initial={{ opacity: 0, x: -14 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: Math.min(index, 10) * 0.05, type: 'spring', stiffness: 260, damping: 26 }}
+              >
                 <button
                   type="button"
                   className="btn btn--quiet"
@@ -103,13 +121,22 @@ export function Inbox() {
                     {relativeTime(thread.expires_at)}
                   </span>
                 </button>
-              </li>
+              </motion.li>
             ))}
           </ul>
 
-          <section className="card">
+          <section className="card inbox__thread">
             {openThread ? (
               <>
+                {/* On a phone the conversation takes over the screen, so it
+                    needs its own way back to the list. */}
+                <button
+                  type="button"
+                  className="btn btn--quiet btn--sm mobile-only inbox__back"
+                  onClick={() => setOpenThread(null)}
+                >
+                  ← All messages
+                </button>
                 <div className="row row--between" style={{ marginBottom: 14 }}>
                   <h3 style={{ margin: 0 }}>Conversation</h3>
                   <span className="faint">expires {relativeTime(openThread.expires_at)}</span>
@@ -125,18 +152,25 @@ export function Inbox() {
                   </p>
                 )}
                 <div className="thread" style={{ marginBottom: 16 }}>
-                  {openThread.messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`msg ${message.mine ? 'msg--mine' : 'msg--theirs'}`}
-                    >
-                      {message.body}
-                      <div className="msg__meta">
-                        {message.from === 'owner' ? 'You' : 'Finder'} ·{' '}
-                        {formatDateTime(message.at)}
-                      </div>
-                    </div>
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {openThread.messages.map((message, index) => (
+                      <motion.div
+                        key={message.id}
+                        layout
+                        className={`msg ${message.mine ? 'msg--mine' : 'msg--theirs'}`}
+                        // Each bubble arrives from its own side of the thread.
+                        initial={{ opacity: 0, x: message.mine ? 28 : -28, scale: 0.94 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 26, delay: Math.min(index, 8) * 0.04 }}
+                      >
+                        {message.body}
+                        <div className="msg__meta">
+                          {message.from === 'owner' ? 'You' : 'Finder'} ·{' '}
+                          {formatDateTime(message.at)}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
 
                 {openThread.closed ? (
@@ -160,7 +194,7 @@ export function Inbox() {
                       className="btn btn--primary"
                       disabled={busy || !reply.trim()}
                     >
-                      {busy ? 'Sending…' : 'Send reply'}
+                      <SendLabel busy={busy} idle="Send reply" working="Sending…" />
                     </button>
                   </form>
                 )}

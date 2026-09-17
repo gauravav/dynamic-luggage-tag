@@ -6,10 +6,12 @@
  * thread expires on its own.
  */
 
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError, api, type RelayThread } from '../api/client'
-import { Field, Notice, Spinner } from '../components/ui'
+import { SendLabel, Skeleton } from '../components/motion'
+import { Field, Notice } from '../components/ui'
 import { formatDateTime, relativeTime } from '../lib/design'
 
 export function RelayPage() {
@@ -85,8 +87,9 @@ export function RelayPage() {
 
   if (!thread) {
     return (
-      <div className="page wrap wrap--narrow">
-        <Spinner label="Opening the conversation" />
+      <div className="page wrap wrap--narrow" aria-busy="true" aria-label="Opening the conversation">
+        <Skeleton height={26} width="60%" />
+        <Skeleton height={200} radius={12} style={{ marginTop: 18 }} />
       </div>
     )
   }
@@ -118,14 +121,23 @@ export function RelayPage() {
 
       <div className="card">
         <div className="thread" style={{ marginBottom: thread.closed ? 0 : 18 }}>
-          {thread.messages.map((message) => (
-            <div key={message.id} className={`msg ${message.mine ? 'msg--mine' : 'msg--theirs'}`}>
-              {message.body}
-              <div className="msg__meta">
-                {message.from === 'finder' ? 'You' : 'The owner'} · {formatDateTime(message.at)}
-              </div>
-            </div>
-          ))}
+          <AnimatePresence initial={false}>
+            {thread.messages.map((message, index) => (
+              <motion.div
+                key={message.id}
+                layout
+                className={`msg ${message.mine ? 'msg--mine' : 'msg--theirs'}`}
+                initial={{ opacity: 0, x: message.mine ? 28 : -28, scale: 0.94 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 26, delay: Math.min(index, 8) * 0.05 }}
+              >
+                {message.body}
+                <div className="msg__meta">
+                  {message.from === 'finder' ? 'You' : 'The owner'} · {formatDateTime(message.at)}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
 
         {thread.closed ? (
@@ -143,7 +155,7 @@ export function RelayPage() {
               maxLength={2000}
             />
             <button type="submit" className="btn btn--primary" disabled={busy || !reply.trim()}>
-              {busy ? 'Sending…' : 'Send'}
+              <SendLabel busy={busy} />
             </button>
           </form>
         )}

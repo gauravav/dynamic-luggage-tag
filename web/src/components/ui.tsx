@@ -1,13 +1,43 @@
 /** Small shared building blocks. */
 
+import { AnimatePresence, motion } from 'motion/react'
 import type { ReactNode } from 'react'
 
+/**
+ * Safe / lost status. Changing status cross-fades the label and, for "lost",
+ * sends a ring rippling out of the dot a few times — the alarm going off.
+ */
 export function StatusPill({ status }: { status: 'safe' | 'lost' }) {
   return (
-    <span className={`pill pill--${status}`}>
-      <span className="pill__dot" />
-      {status === 'lost' ? 'Reported lost' : 'Marked safe'}
-    </span>
+    <motion.span
+      layout
+      className={`pill pill--${status}`}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+    >
+      <span className="pill__dot-wrap">
+        <span className="pill__dot" />
+        {status === 'lost' && (
+          <motion.span
+            key="ring"
+            className="pill__ring"
+            initial={{ scale: 1, opacity: 0.7 }}
+            animate={{ scale: 3.2, opacity: 0 }}
+            transition={{ duration: 1.1, repeat: 3, ease: 'easeOut' }}
+          />
+        )}
+      </span>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={status}
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -5 }}
+          transition={{ duration: 0.15 }}
+        >
+          {status === 'lost' ? 'Reported lost' : 'Marked safe'}
+        </motion.span>
+      </AnimatePresence>
+    </motion.span>
   )
 }
 
@@ -19,9 +49,20 @@ export function Notice({
   children: ReactNode
 }) {
   return (
-    <div className={`notice notice--${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
+    <motion.div
+      className={`notice notice--${kind}`}
+      role={kind === 'error' ? 'alert' : 'status'}
+      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+      animate={
+        kind === 'error'
+          ? // Errors give a small shake so they are noticed, not just shown.
+            { opacity: 1, y: 0, scale: 1, x: [0, -6, 5, -3, 2, 0] }
+          : { opacity: 1, y: 0, scale: 1 }
+      }
+      transition={{ type: 'spring', stiffness: 360, damping: 26, x: { duration: 0.4 } }}
+    >
       {children}
-    </div>
+    </motion.div>
   )
 }
 

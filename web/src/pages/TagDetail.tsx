@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { AnimatePresence, motion, useAnimate } from 'motion/react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError, api, parseLocation, type ScanRecord, type Tag } from '../api/client'
 import { NfcCard } from '../components/NfcCard'
 import { TagArt } from '../components/TagArt'
-import { Empty, Field, Notice, Spinner, StatusPill, Toggle } from '../components/ui'
+import { BusyLabel, Skeleton, Stagger, StaggerItem, SuccessTick } from '../components/motion'
+import { Empty, Field, Notice, StatusPill, Toggle } from '../components/ui'
 import { describe, formatDateTime, relativeTime } from '../lib/design'
 import { useSession } from '../state/session'
 
@@ -19,6 +21,15 @@ export function TagDetail() {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [rotating, setRotating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [savedLabel, setSavedLabel] = useState(false)
+
+  // Tag artwork appears twice (above the form on phones, in the sidebar on
+  // desktop), and both react to the status changing.
+  const [artScope, animateArt] = useAnimate<HTMLDivElement>()
+  const [mobileArtScope, animateMobileArt] = useAnimate<HTMLDivElement>()
+  const previousStatus = useRef<string | null>(null)
 
   const load = useCallback(async () => {
     if (!tagId) return
@@ -40,6 +51,23 @@ export function TagDetail() {
     void load()
   }, [load])
 
+  // Reporting a bag lost is the most consequential action here, so the tag
+  // itself reacts: marked lost, it shakes like an alarm; marked safe, it
+  // settles back with a small bounce.
+  useEffect(() => {
+    if (!tag) return
+    const previous = previousStatus.current
+    previousStatus.current = tag.status
+    if (previous === null || previous === tag.status) return
+    const keyframes =
+      tag.status === 'lost'
+        ? { rotate: [0, -7, 6, -5, 4, -2, 0], scale: [1, 1.04, 1] }
+        : { y: [0, -10, 0], scale: [1, 1.02, 1] }
+    for (const [scope, run] of [[artScope, animateArt], [mobileArtScope, animateMobileArt]] as const) {
+      if (scope.current) void run(scope.current, keyframes, { duration: 0.7, ease: 'easeInOut' })
+    }
+  }, [tag, artScope, animateArt, mobileArtScope, animateMobileArt])
+
   async function patch(changes: Record<string, unknown>, note?: string) {
     if (!tagId) return
     setBusy(true)
@@ -48,6 +76,10 @@ export function TagDetail() {
     try {
       const body = await api.patch<{ tag: Tag }>(`/tags/${tagId}`, changes)
       setTag(body.tag)
+      if ('label' in changes) {
+        setSavedLabel(true)
+        window.setTimeout(() => setSavedLabel(false), 2200)
+      }
       if (note) setInfo(note)
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not save that change.')
@@ -63,6 +95,7 @@ export function TagDetail() {
     )
     if (!confirmed) return
     setBusy(true)
+    setRotating(true)
     try {
       const body = await api.post<{ tag: Tag; threads_closed: number }>(`/tags/${tagId}/rotate`)
       setTag(body.tag)
@@ -75,6 +108,7 @@ export function TagDetail() {
       setError(cause instanceof ApiError ? cause.message : 'Could not rotate the code.')
     } finally {
       setBusy(false)
+      setRotating(false)
     }
   }
 
@@ -86,7 +120,9 @@ export function TagDetail() {
     if (!confirmed) return
     try {
       await api.delete(`/tags/${tagId}`)
-      navigate('/app', { replace: true })
+      // Let the page fold away before leaving, so the deletion is felt.
+      setDeleting(true)
+      window.setTimeout(() => navigate('/app', { replace: true }), 420)
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not delete this tag.')
     }
@@ -95,7 +131,18 @@ export function TagDetail() {
   if (!tag) {
     return (
       <div className="page wrap">
-        {error ? <Notice>{error}</Notice> : <Spinner label="Loading tag" />}
+        {error ? (
+          <Notice>{error}</Notice>
+        ) : (
+          <div className="grid grid--split" style={{ alignItems: 'start' }} aria-busy="true" aria-label="Loading tag">
+            <div className="stack">
+              <Skeleton height={34} width="55%" />
+              <Skeleton height={120} radius={12} />
+              <Skeleton height={220} radius={12} />
+            </div>
+            <Skeleton height={0} style={{ paddingBottom: '146%' }} radius={12} />
+          </div>
+        )}
       </div>
     )
   }
@@ -103,7 +150,11 @@ export function TagDetail() {
   const isLost = tag.status === 'lost'
 
   return (
-    <div className="page wrap">
+    <motion.div
+      className="page wrap"
+      animate={deleting ? { opacity: 0, scale: 0.96, y: 20 } : { opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.38, ease: 'easeIn' }}
+    >
       <p className="kicker">
         <Link to="/app" style={{ color: 'inherit' }}>
           &larr; all tags
@@ -114,12 +165,30 @@ export function TagDetail() {
         <StatusPill status={tag.status} />
       </div>
 
-      {error && <Notice>{error}</Notice>}
-      {info && <Notice kind="info">{info}</Notice>}
+      <AnimatePresence mode="popLayout">
+        {error && <Notice key={`e-${error}`}>{error}</Notice>}
+        {info && (
+          <Notice kind="info" key={`i-${info}`}>
+            {info}
+          </Notice>
+        )}
+      </AnimatePresence>
+
+      {/* On phones the tag leads the page; on desktop it lives in the sidebar. */}
+      <div className="mobile-only tag-detail__mobile-art">
+        <div ref={mobileArtScope} style={{ transformOrigin: '50% 0%' }}>
+          <TagArt design={tag.design} name={user?.name ?? null} subtitle={tag.label} />
+        </div>
+      </div>
 
       <div className="grid grid--split" style={{ alignItems: 'start' }}>
-        <div className="stack">
-          <section className="card">
+        <Stagger className="stack">
+          <StaggerItem>
+          <motion.section
+            className="card status-card"
+            animate={{ backgroundColor: isLost ? '#FBEFEB' : '#FFFFFF', borderColor: isLost ? '#E9C7BC' : '#DCD0AF' }}
+            transition={{ duration: 0.4 }}
+          >
             <h3 style={{ marginBottom: 14 }}>Status</h3>
             <Toggle
               label="Report this bag lost"
@@ -145,8 +214,10 @@ export function TagDetail() {
                 Confirm your email address first — this is the one action that publishes your name.
               </p>
             )}
-          </section>
+          </motion.section>
+          </StaggerItem>
 
+          <StaggerItem>
           <section className="card">
             <h3 style={{ marginBottom: 14 }}>What a finder sees when it is lost</h3>
             <div className="stack stack--tight">
@@ -175,6 +246,8 @@ export function TagDetail() {
             </p>
           </section>
 
+          </StaggerItem>
+          <StaggerItem>
           <section className="card">
             <h3 style={{ marginBottom: 14 }}>Details</h3>
             <Field
@@ -185,16 +258,33 @@ export function TagDetail() {
               hint="For your own reference, and printed small under your name."
               maxLength={80}
             />
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              disabled={busy || label === (tag.label ?? '')}
-              onClick={() => patch({ label: label || null }, 'Label saved.')}
-            >
-              Save label
-            </button>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                disabled={busy || label === (tag.label ?? '')}
+                onClick={() => patch({ label: label || null })}
+              >
+                Save label
+              </button>
+              <AnimatePresence>
+                {savedLabel && (
+                  <motion.span
+                    className="row"
+                    style={{ gap: 6, color: 'var(--forest)', fontSize: 14, fontWeight: 600 }}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <SuccessTick /> Saved
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
           </section>
+          </StaggerItem>
 
+          <StaggerItem>
           <section className="card">
             <h3 style={{ marginBottom: 6 }}>Scan activity</h3>
             <p className="faint" style={{ marginBottom: 14 }}>
@@ -202,15 +292,24 @@ export function TagDetail() {
               stored.
             </p>
             {scans === null ? (
-              <Spinner />
+              <div className="stack stack--tight">
+                <Skeleton height={42} />
+                <Skeleton height={42} />
+              </div>
             ) : scans.length === 0 ? (
               <Empty title="No scans yet">
                 <p className="muted">Nobody has opened this tag&#8217;s page.</p>
               </Empty>
             ) : (
               <ul className="list">
-                {scans.map((scan) => (
-                  <li key={scan.id} className="list__item">
+                {scans.map((scan, index) => (
+                  <motion.li
+                    key={scan.id}
+                    className="list__item"
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.25 + Math.min(index, 10) * 0.05, type: 'spring', stiffness: 260, damping: 26 }}
+                  >
                     <span>
                       {formatDateTime(scan.occurred_at)}
                       <br />
@@ -224,16 +323,28 @@ export function TagDetail() {
                       <br />
                       <span className="faint">expires {relativeTime(scan.expires_at)}</span>
                     </span>
-                  </li>
+                  </motion.li>
                 ))}
               </ul>
             )}
           </section>
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         <aside className="stack">
-          <TagArt design={tag.design} name={user?.name ?? null} subtitle={tag.label} />
-          <p className="faint center" style={{ margin: 0 }}>
+          <div className="desktop-only">
+            <div ref={artScope} style={{ transformOrigin: '50% 0%' }}>
+              <motion.div
+                initial={{ opacity: 0, rotate: -6, y: -16 }}
+                animate={{ opacity: 1, rotate: 0, y: 0 }}
+                transition={{ type: 'spring', stiffness: 120, damping: 10 }}
+                style={{ transformOrigin: '50% 0%' }}
+              >
+                <TagArt design={tag.design} name={user?.name ?? null} subtitle={tag.label} />
+              </motion.div>
+            </div>
+          </div>
+          <p className="faint center desktop-only" style={{ margin: 0 }}>
             {describe(tag.design)}
           </p>
 
@@ -274,11 +385,35 @@ export function TagDetail() {
 
           <div className="card">
             <h3 style={{ marginBottom: 10 }}>Scan link</h3>
-            <p className="code-block">{tag.scan_url}</p>
+            <div className="code-block" style={{ overflow: 'hidden' }}>
+              {/* A rotated code flips over, so it is obvious the link changed. */}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={tag.scan_url}
+                  style={{ display: 'block' }}
+                  initial={{ opacity: 0, rotateX: -90, y: 10 }}
+                  animate={{ opacity: 1, rotateX: 0, y: 0 }}
+                  exit={{ opacity: 0, rotateX: 90, y: -10 }}
+                  transition={{ duration: 0.35 }}
+                >
+                  {tag.scan_url}
+                </motion.span>
+              </AnimatePresence>
+            </div>
             <p className="faint">
               A random 256-bit token. It identifies a row and nothing else.
             </p>
             <button type="button" className="btn btn--ghost btn--sm" onClick={rotate} disabled={busy}>
+              <motion.svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                animate={{ rotate: rotating ? 360 : 0 }}
+                transition={rotating ? { duration: 0.7, repeat: Infinity, ease: 'linear' } : { duration: 0 }}
+              >
+                <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </motion.svg>
               Issue a new code
             </button>
           </div>
@@ -286,12 +421,12 @@ export function TagDetail() {
           <div className="card">
             <h3 style={{ marginBottom: 10 }}>Delete</h3>
             <p className="faint">This tag and its scan history are removed permanently.</p>
-            <button type="button" className="btn btn--danger btn--sm" onClick={remove}>
-              Delete this tag
+            <button type="button" className="btn btn--danger btn--sm" onClick={remove} disabled={deleting}>
+              <BusyLabel busy={deleting} idle="Delete this tag" working="Deleting…" />
             </button>
           </div>
         </aside>
       </div>
-    </div>
+    </motion.div>
   )
 }

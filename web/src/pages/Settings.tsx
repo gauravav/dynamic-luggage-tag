@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { API_BASE, ApiError, api, type AccountDetail, type SessionRecord } from '../api/client'
+import { AnimatePresence, motion } from 'motion/react'
+import { BusyLabel, Skeleton, Stagger, StaggerItem } from '../components/motion'
+import { PasswordField } from '../components/PasswordStrength'
 import { Field, Notice, Spinner, Toggle } from '../components/ui'
 import { formatDateTime } from '../lib/design'
 import { useSession } from '../state/session'
 
 export function Settings() {
   const { refresh, signOut } = useSession()
+  const navigate = useNavigate()
   const [account, setAccount] = useState<AccountDetail | null>(null)
   const [form, setForm] = useState({ name: '', phone: '', address: '' })
   const [error, setError] = useState<string | null>(null)
@@ -57,6 +62,11 @@ export function Settings() {
     }
   }
 
+  async function handleSignOut() {
+    await signOut()
+    navigate('/', { replace: true })
+  }
+
   if (!account) {
     return (
       <div className="page wrap">
@@ -75,8 +85,8 @@ export function Settings() {
       {error && <Notice>{error}</Notice>}
       {info && <Notice kind="info">{info}</Notice>}
 
-      <div className="stack" style={{ gap: 24 }}>
-        <section className="card">
+      <Stagger className="stack" style={{ gap: 24 }}>
+        <StaggerItem className="card">
           <h3 style={{ marginBottom: 6 }}>Your details</h3>
           <p className="faint" style={{ marginBottom: 18 }}>
             Encrypted with a key that belongs to this account alone. Only your name can ever appear
@@ -124,14 +134,24 @@ export function Settings() {
               {busy ? 'Saving…' : 'Save details'}
             </button>
           </form>
-        </section>
+        </StaggerItem>
 
-        <NotificationSection account={account} onChanged={load} />
-        <TwoFactorSection account={account} onChanged={load} />
-        <SessionsSection />
-        <PasswordSection />
-        <DataSection onDeleted={signOut} />
-      </div>
+        <StaggerItem><NotificationSection account={account} onChanged={load} /></StaggerItem>
+        <StaggerItem><TwoFactorSection account={account} onChanged={load} /></StaggerItem>
+        <StaggerItem><SessionsSection /></StaggerItem>
+        <StaggerItem><PasswordSection context={[account.email ?? '', account.name ?? '']} /></StaggerItem>
+        <StaggerItem><DataSection onDeleted={signOut} /></StaggerItem>
+        {/* The header hides its links on phones, so signing out lives here too. */}
+        <StaggerItem className="card mobile-only">
+          <h3 style={{ marginBottom: 10 }}>Sign out</h3>
+          <p className="faint" style={{ marginBottom: 14 }}>
+            Ends this session on this device only.
+          </p>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={handleSignOut}>
+            Sign out
+          </button>
+        </StaggerItem>
+      </Stagger>
     </div>
   )
 }
@@ -243,9 +263,18 @@ function TwoFactorSection({
         <Notice kind="warn">
           <strong>Save these recovery codes now.</strong> Each works once, and this is the only time
           they are shown.
-          <p className="code-block" style={{ marginTop: 10 }}>
-            {codes.join('\n')}
-          </p>
+          <div className="code-block" style={{ marginTop: 10 }}>
+            {codes.map((code, index) => (
+              <motion.div
+                key={code}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.07, type: 'spring', stiffness: 320, damping: 26 }}
+              >
+                {code}
+              </motion.div>
+            ))}
+          </div>
         </Notice>
       )}
 
@@ -320,18 +349,31 @@ function SessionsSection() {
         Recorded as a device family and a hashed network, never a full user agent or an IP address.
       </p>
       {sessions === null ? (
-        <Spinner />
+        <div className="stack stack--tight">
+          <Skeleton height={38} />
+          <Skeleton height={38} />
+        </div>
       ) : (
         <ul className="list">
-          {sessions.map((session) => (
-            <li key={session.id} className="list__item">
+          <AnimatePresence initial={false}>
+          {sessions.map((session, index) => (
+            <motion.li
+              key={session.id}
+              className="list__item"
+              layout
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, x: 40, height: 0, paddingBlock: 0 }}
+              transition={{ delay: Math.min(index, 8) * 0.04, type: 'spring', stiffness: 300, damping: 28 }}
+            >
               <span>
                 {session.client}
                 {session.current && <span className="faint"> · this device</span>}
               </span>
               <span className="faint">last active {formatDateTime(session.last_seen_at)}</span>
-            </li>
+            </motion.li>
           ))}
+          </AnimatePresence>
         </ul>
       )}
       <button
@@ -349,13 +391,13 @@ function SessionsSection() {
           }
         }}
       >
-        Sign out everywhere else
+        <BusyLabel busy={busy} idle="Sign out everywhere else" working="Signing out…" />
       </button>
     </section>
   )
 }
 
-function PasswordSection() {
+function PasswordSection({ context }: { context: string[] }) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -400,17 +442,16 @@ function PasswordSection() {
           onChange={setCurrent}
           autoComplete="current-password"
         />
-        <Field
+        <PasswordField
           label="New password"
           name="new_password"
-          type="password"
           value={next}
           onChange={setNext}
-          hint="At least 12 characters. Changing it signs out every other device."
-          autoComplete="new-password"
+          context={context}
         />
+        <p className="faint" style={{ marginTop: -6 }}>Changing it signs out every other device.</p>
         <button type="submit" className="btn btn--primary btn--sm" disabled={busy || !current || !next}>
-          Change password
+          <BusyLabel busy={busy} idle="Change password" working="Changing…" />
         </button>
       </form>
     </section>

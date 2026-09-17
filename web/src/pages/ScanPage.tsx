@@ -10,11 +10,14 @@
  * bots and prefetches never reach the owner's history or inbox.
  */
 
+import { motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ApiError, api, type ScanPage as ScanPageData } from '../api/client'
 import { TagArt } from '../components/TagArt'
-import { Field, Notice, Spinner } from '../components/ui'
+import { MessageSent, PinDrop, SwingingTag } from '../components/illustrations'
+import { BusyLabel, Reveal, SendLabel, Skeleton } from '../components/motion'
+import { Field, Notice } from '../components/ui'
 import { useTurnstile } from '../lib/turnstile'
 
 export function ScanPage() {
@@ -56,26 +59,32 @@ export function ScanPage() {
   if (error) {
     return (
       <div className="page wrap wrap--narrow center">
+        <Reveal>
         <h1 style={{ fontSize: 26, marginBottom: 10 }}>This tag is not registered</h1>
         <p className="muted">
           It may have been deleted, or its code may have been replaced by the owner.
         </p>
+        </Reveal>
       </div>
     )
   }
 
   if (!data || !token) {
     return (
-      <div className="page wrap wrap--narrow">
-        <Spinner label="Checking this tag" />
+      <div className="page wrap wrap--narrow" aria-busy="true" aria-label="Checking this tag">
+        <Skeleton height={150} radius={12} style={{ maxWidth: 210, margin: '0 auto 28px' }} />
+        <Skeleton height={190} radius={12} />
       </div>
     )
   }
 
   return (
     <div className="page wrap wrap--narrow">
+      {/* The tag drops in and swings, as if just turned over in the hand. */}
       <div style={{ maxWidth: 210, margin: '0 auto 28px' }}>
-        <TagArt design={data.design} crest title="The tag you scanned" />
+        <SwingingTag>
+          <TagArt design={data.design} crest title="The tag you scanned" />
+        </SwingingTag>
       </div>
 
       {data.status === 'lost' ? (
@@ -93,29 +102,48 @@ export function ScanPage() {
 
 function SafeState({ token, data }: { token: string; data: ScanPageData }) {
   return (
-    <div className="card">
-      <span className="pill pill--safe">
+    <Reveal className="card" delay={0.25}>
+      <motion.span
+        className="pill pill--safe"
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 18, delay: 0.4 }}
+      >
         <span className="pill__dot" />
         Marked safe
-      </span>
+      </motion.span>
       <h1 style={{ fontSize: 24, margin: '14px 0 8px' }}>This bag has not been reported lost.</h1>
       <p className="muted">
         The owner knows where it is, so no personal details are shown. If the bag looks like it has
         gone astray, you can still let them know it passed through here.
       </p>
       <LocationShare token={token} retentionDays={data.retention_days} />
-    </div>
+    </Reveal>
   )
 }
 
 function LostState({ token, data }: { token: string; data: ScanPageData }) {
   return (
     <>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <span className="pill pill--lost">
-          <span className="pill__dot" />
+      <Reveal className="card" style={{ marginBottom: 20 }} delay={0.25}>
+        <motion.span
+          className="pill pill--lost"
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 18, delay: 0.4 }}
+        >
+          <span className="pill__dot-wrap">
+            <span className="pill__dot" />
+            {/* A slow pulse: this bag is actively being looked for. */}
+            <motion.span
+              className="pill__ring"
+              initial={{ scale: 1, opacity: 0.6 }}
+              animate={{ scale: 3.4, opacity: 0 }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut', delay: 0.8 }}
+            />
+          </span>
           Reported lost
-        </span>
+        </motion.span>
         <h1 style={{ fontSize: 24, margin: '14px 0 8px' }}>
           {data.owner?.name ? 'This bag belongs to' : 'The owner is looking for this bag'}
         </h1>
@@ -135,7 +163,7 @@ function LostState({ token, data }: { token: string; data: ScanPageData }) {
           Thank you for scanning. Telling them where you found it is the fastest way to get it
           home.
         </p>
-      </div>
+      </Reveal>
 
       {data.relay_available && <MessageForm token={token} />}
       <LocationShare token={token} retentionDays={data.retention_days} />
@@ -152,7 +180,10 @@ function LocationShare({ token, retentionDays }: { token: string; retentionDays:
   if (state === 'sent') {
     return (
       <Notice kind="info">
-        Thank you — the owner has been told the bag passed through {city || 'here'}.
+        <span className="row" style={{ gap: 10, flexWrap: 'nowrap' }}>
+          <PinDrop />
+          <span>Thank you — the owner has been told the bag passed through {city || 'here'}.</span>
+        </span>
       </Notice>
     )
   }
@@ -178,7 +209,7 @@ function LocationShare({ token, retentionDays }: { token: string; retentionDays:
   }
 
   return (
-    <div className="panel" style={{ marginTop: 20 }}>
+    <Reveal className="panel" style={{ marginTop: 20 }} delay={0.45}>
       <h3 style={{ fontSize: 16, marginBottom: 6 }}>Tell the owner roughly where you are?</h3>
       <p className="faint" style={{ marginBottom: 14 }}>
         City level only, once, and entirely up to you. Your exact location and network address are
@@ -202,7 +233,7 @@ function LocationShare({ token, retentionDays }: { token: string; retentionDays:
         </div>
         <div className="row">
           <button type="submit" className="btn btn--primary btn--sm" disabled={busy || !city}>
-            {busy ? 'Sharing…' : 'Share city'}
+            <BusyLabel busy={busy} idle="Share city" working="Sharing…" />
           </button>
           <button
             type="button"
@@ -213,7 +244,7 @@ function LocationShare({ token, retentionDays }: { token: string; retentionDays:
           </button>
         </div>
       </form>
-    </div>
+    </Reveal>
   )
 }
 
@@ -232,7 +263,15 @@ function MessageForm({ token }: { token: string }) {
 
   if (relayToken) {
     return (
-      <div className="card">
+      <motion.div
+        className="card"
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+      >
+        <div style={{ margin: '-6px 0 2px' }}>
+          <MessageSent />
+        </div>
         <h3 style={{ marginBottom: 8 }}>Message sent</h3>
         <p className="muted">
           The owner has been notified.{' '}
@@ -244,7 +283,7 @@ function MessageForm({ token }: { token: string }) {
         <a className="btn btn--ghost btn--sm" href={`/r/${relayToken}`}>
           Open the conversation
         </a>
-      </div>
+      </motion.div>
     )
   }
 
@@ -269,7 +308,7 @@ function MessageForm({ token }: { token: string }) {
   }
 
   return (
-    <div className="card">
+    <Reveal className="card" delay={0.35}>
       <h3 style={{ marginBottom: 6 }}>Message the owner</h3>
       <p className="faint" style={{ marginBottom: 16 }}>
         Sent through this app. They will not see your phone number or email address, and you will
@@ -312,9 +351,9 @@ function MessageForm({ token }: { token: string }) {
           className="btn btn--danger"
           disabled={busy || !body.trim() || !turnstile.ready}
         >
-          {busy ? 'Sending…' : 'Send message'}
+          <SendLabel busy={busy} idle="Send message" working="Sending…" />
         </button>
       </form>
-    </div>
+    </Reveal>
   )
 }

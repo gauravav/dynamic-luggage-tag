@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, api } from '../api/client'
+import { MailSent } from '../components/illustrations'
+import { BusyLabel, Reveal } from '../components/motion'
+import { PasswordField } from '../components/PasswordStrength'
 import { Field, Notice } from '../components/ui'
 import { useTurnstile } from '../lib/turnstile'
 
@@ -42,14 +45,19 @@ export function ResetRequest() {
   if (sent) {
     return (
       <div className="page wrap wrap--narrow">
-        <p className="kicker">check your inbox</p>
-        <h1 style={{ fontSize: 26 }}>If that address has an account&#8230;</h1>
-        <p className="muted">
-          &#8230;a reset link is on its way. It is valid for 30 minutes and can be used once.
-        </p>
-        <Link to="/login" className="btn btn--ghost">
-          Back to sign in
-        </Link>
+        <div style={{ marginBottom: 12 }}>
+          <MailSent />
+        </div>
+        <Reveal delay={0.35}>
+          <p className="kicker">check your inbox</p>
+          <h1 style={{ fontSize: 26 }}>If that address has an account&#8230;</h1>
+          <p className="muted">
+            &#8230;a reset link is on its way. It is valid for 30 minutes and can be used once.
+          </p>
+          <Link to="/login" className="btn btn--ghost">
+            Back to sign in
+          </Link>
+        </Reveal>
       </div>
     )
   }
@@ -76,7 +84,7 @@ export function ResetRequest() {
           className="btn btn--primary btn--block"
           disabled={busy || !turnstile.ready}
         >
-          {busy ? 'Sending…' : 'Send reset link'}
+          <BusyLabel busy={busy} idle="Send reset link" working="Sending…" />
         </button>
       </form>
     </div>
@@ -123,19 +131,16 @@ export function ResetPassword() {
         Every device signed in to this account will be signed out once you finish.
       </Notice>
       <form onSubmit={handleSubmit} noValidate>
-        <Field
+        <PasswordField
           label="New password"
           name="new_password"
-          type="password"
           value={password}
           onChange={setPassword}
           error={errors.new_password}
-          hint="At least 12 characters."
-          autoComplete="new-password"
           required
         />
         <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
-          {busy ? 'Saving…' : 'Save new password'}
+          <BusyLabel busy={busy} idle="Save new password" working="Saving…" />
         </button>
       </form>
     </div>

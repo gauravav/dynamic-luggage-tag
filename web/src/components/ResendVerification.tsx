@@ -11,6 +11,7 @@
  * throws in private windows and with site data blocked.
  */
 
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api } from '../api/client'
 import { useTurnstile } from '../lib/turnstile'
@@ -101,7 +102,22 @@ export function ResendVerification({ email }: { email: string }) {
 
       {remaining > 0 ? (
         <p className="faint" style={{ margin: 0 }}>
-          You can request another link in {formatRemaining(remaining)}.
+          You can request another link in{' '}
+          {/* The countdown flips digit-style each second, so it reads as live. */}
+          <span className="countdown">
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={formatRemaining(remaining)}
+                initial={{ y: 10, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -10, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+              >
+                {formatRemaining(remaining)}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+          .
         </p>
       ) : (
         <>

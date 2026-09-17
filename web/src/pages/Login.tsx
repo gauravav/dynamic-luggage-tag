@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { ResendVerification } from '../components/ResendVerification'
+import { AnimatePresence, motion } from 'motion/react'
+import { BusyLabel } from '../components/motion'
 import { Field, Notice } from '../components/ui'
 import { useTurnstile } from '../lib/turnstile'
 import { useSession } from '../state/session'
@@ -94,11 +96,29 @@ export function Login() {
           disabled={needsSecondFactor}
         />
 
+        <AnimatePresence initial={false}>
         {needsSecondFactor && (
-          <>
+          // The code step unfolds beneath the password rather than appearing
+          // with a jump, so it reads as the next step of the same sign-in.
+          <motion.div
+            key="second-factor"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+            style={{ overflow: 'hidden' }}
+          >
             <Notice kind="info">
               Enter the six-digit code from your authenticator app.
             </Notice>
+            <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={useRecovery ? 'recovery' : 'totp'}
+              initial={{ opacity: 0, x: useRecovery ? 24 : -24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: useRecovery ? -24 : 24 }}
+              transition={{ duration: 0.18 }}
+            >
             {useRecovery ? (
               <Field
                 label="Recovery code"
@@ -119,6 +139,8 @@ export function Login() {
                 maxLength={8}
               />
             )}
+            </motion.div>
+            </AnimatePresence>
             <button
               type="button"
               className="btn btn--quiet btn--sm"
@@ -126,8 +148,9 @@ export function Login() {
             >
               {useRecovery ? 'Use an authenticator code instead' : 'Use a recovery code instead'}
             </button>
-          </>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {turnstile.widget}
         {turnstile.loadError && <Notice>{turnstile.loadError}</Notice>}
@@ -137,7 +160,7 @@ export function Login() {
           disabled={busy || !turnstile.ready}
           style={{ marginTop: 12 }}
         >
-          {busy ? 'Signing in…' : 'Sign in'}
+          <BusyLabel busy={busy} idle="Sign in" working="Signing in…" />
         </button>
       </form>
 
