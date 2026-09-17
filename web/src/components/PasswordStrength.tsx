@@ -1,9 +1,15 @@
 /**
  * Password field with an animated strength meter.
  *
- *   weak    a paperclip barely holding a sheet of paper, fluttering loose
- *   medium  a small padlock whose shackle drops shut
- *   strong  a vault door: bolts slide home and the wheel spins locked
+ *   weak       a paperclip barely holding a sheet of paper, fluttering loose
+ *   medium     a small padlock whose shackle drops shut
+ *   strong     a deadbolt: the thumbturn rotates and the bolt throws into the
+ *              door frame
+ *   excellent  a vault door: bolts slide home and the wheel spins locked
+ *
+ * Four grades, not three: everything from a decent passphrase upward used to
+ * land on one, so the meter stopped responding exactly where someone is
+ * deciding whether another word is worth typing.
  *
  * The grade comes from `lib/passwordStrength.ts`, whose policy check is a
  * tested port of the server's — so the illustration can never reach the lock,
@@ -18,7 +24,8 @@ const COLORS: Record<Level, string> = {
   empty: '#C9BFA6',
   weak: '#9C3B2A',
   medium: '#8C6221',
-  strong: '#1F4034',
+  strong: '#2F5D4E',
+  excellent: '#1F4034',
 }
 
 const LABELS: Record<Level, string> = {
@@ -26,6 +33,7 @@ const LABELS: Record<Level, string> = {
   weak: 'Weak',
   medium: 'Medium',
   strong: 'Strong',
+  excellent: 'Excellent',
 }
 
 const settle: Transition = { type: 'spring', stiffness: 260, damping: 22 }
@@ -64,7 +72,8 @@ export function PasswordField({
       empty: 'At least 12 characters. A few unrelated words beats a short, clever one.',
       weak: '',
       medium: 'Good enough to use. A few more characters would make it much harder to guess.',
-      strong: 'This is a password worth keeping.',
+      strong: 'Solid. One more word would put it out of reach entirely.',
+      excellent: 'Out of reach of guessing. This is a password worth keeping.',
     }[result.level]
 
   return (
@@ -87,6 +96,8 @@ export function PasswordField({
           <button
             type="button"
             className="password-field__toggle"
+            // Keeps the caret in the field; see the note in ui.tsx.
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setVisible((previous) => !previous)}
             aria-label={visible ? 'Hide password' : 'Show password'}
             aria-pressed={visible}
@@ -139,7 +150,14 @@ export function PasswordField({
  * one settles in, and each plays its own short "securing" motion on arrival.
  */
 export function StrengthIllustration({ level }: { level: Level }) {
-  const scene = level === 'strong' ? 'vault' : level === 'medium' ? 'lock' : 'clip'
+  const scene =
+    level === 'excellent'
+      ? 'vault'
+      : level === 'strong'
+        ? 'deadbolt'
+        : level === 'medium'
+          ? 'lock'
+          : 'clip'
   return (
     <div className="strength-art" role="img" aria-label={LABELS[level] ? `${LABELS[level]} password` : 'Password strength'}>
       <svg viewBox="0 0 120 100" width="100%" height="100%">
@@ -154,6 +172,7 @@ export function StrengthIllustration({ level }: { level: Level }) {
           >
             {scene === 'clip' && <PaperclipScene muted={level === 'empty'} />}
             {scene === 'lock' && <LockScene />}
+            {scene === 'deadbolt' && <DeadboltScene />}
             {scene === 'vault' && <VaultScene />}
           </motion.g>
         </AnimatePresence>
@@ -221,9 +240,77 @@ function LockScene() {
   )
 }
 
+/**
+ * A deadbolt throwing into the door frame.
+ *
+ * The thumbturn rotates a quarter turn and the bolt slides out of the housing
+ * into the strike plate, where it lands with a small ripple. It reads as one
+ * solid thing holding a door shut — a step past a padlock hanging off a hasp,
+ * and clearly short of a vault.
+ */
+function DeadboltScene() {
+  const metal = COLORS.strong
+  const steel = '#E4EFEA'
+  return (
+    <g>
+      {/* The door, and the frame it shuts against. */}
+      <rect x="4" y="6" width="80" height="88" rx="5" fill="#EDE4CE" />
+      <rect x="12" y="14" width="64" height="30" rx="3" fill="none" stroke="#DCD0AF" strokeWidth="2" />
+      <rect x="88" y="0" width="32" height="100" fill="#E0D6BC" />
+      <rect x="84" y="0" width="5" height="100" fill="#CFC5AC" />
+      <rect x="86" y="38" width="13" height="26" rx="2" fill={metal} opacity="0.35" />
+      <rect x="89" y="43" width="9" height="16" rx="1.5" fill="#BBAF93" />
+
+      {/* The bolt, thrown from inside the housing into that hole. */}
+      <motion.rect
+        x="52"
+        y="44"
+        width="40"
+        height="14"
+        rx="2"
+        fill={steel}
+        stroke={metal}
+        strokeWidth="1.6"
+        initial={{ x: -20 }}
+        animate={{ x: 0 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 24, delay: 0.18 }}
+      />
+
+      {/* Housing, drawn over the bolt so it emerges from inside it. */}
+      <rect x="30" y="28" width="38" height="46" rx="7" fill={metal} />
+      <rect x="35" y="33" width="28" height="36" rx="5" fill="none" stroke={steel} strokeOpacity="0.4" strokeWidth="1.5" />
+
+      {/* The thumbturn: a quarter turn, and it is locked. */}
+      <motion.g
+        style={{ transformBox: 'view-box', transformOrigin: '49px 51px' }}
+        initial={{ rotate: -90 }}
+        animate={{ rotate: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+      >
+        <circle cx="49" cy="51" r="11" fill={steel} />
+        <rect x="46.5" y="42" width="5" height="18" rx="2.5" fill={metal} />
+      </motion.g>
+
+      {/* The thunk, where it lands. */}
+      <motion.circle
+        cx="92"
+        cy="51"
+        r="16"
+        fill="none"
+        stroke={metal}
+        strokeWidth="2.5"
+        style={{ transformBox: 'view-box', transformOrigin: '92px 51px' }}
+        initial={{ opacity: 0, scale: 0.4 }}
+        animate={{ opacity: [0, 0.7, 0], scale: [0.4, 1, 1.25] }}
+        transition={{ duration: 0.6, delay: 0.42, ease: 'easeOut' }}
+      />
+    </g>
+  )
+}
+
 function VaultScene() {
   const door = '#2F5D4E'
-  const frame = COLORS.strong
+  const frame = COLORS.excellent
   const bolts = [
     { x: 55, y: 14, w: 10, h: 8, from: { y: -8 } },
     { x: 55, y: 82, w: 10, h: 8, from: { y: 8 } },

@@ -27,7 +27,7 @@ const OBVIOUS = new Set([
   'starwars', 'whatever', 'luggage', 'luggagetag', 'dynamicluggagetag',
 ])
 
-export type Level = 'empty' | 'weak' | 'medium' | 'strong'
+export type Level = 'empty' | 'weak' | 'medium' | 'strong' | 'excellent'
 
 export interface Strength {
   level: Level
@@ -128,6 +128,16 @@ export function entropyBits(password: string): number {
 
 const STRONG_BITS = 70
 
+/**
+ * Where "strong" stops being the whole top of the scale.
+ *
+ * Without this, every password from a decent passphrase upward graded the
+ * same, so the meter stopped responding exactly where people are deciding
+ * whether to bother adding more. Above this the grade — and the illustration —
+ * change again.
+ */
+const EXCELLENT_BITS = 100
+
 export function strength(password: string, context: string[] = []): Strength {
   if (!password) return { level: 'empty', score: 0, problem: null }
 
@@ -143,5 +153,13 @@ export function strength(password: string, context: string[] = []): Strength {
   if (bits < STRONG_BITS) {
     return { level: 'medium', score: 0.4 + Math.min(1, bits / STRONG_BITS) * 0.3, problem: null }
   }
-  return { level: 'strong', score: Math.min(1, 0.75 + (bits - STRONG_BITS) / 200), problem: null }
+  if (bits < EXCELLENT_BITS) {
+    const through = (bits - STRONG_BITS) / (EXCELLENT_BITS - STRONG_BITS)
+    return { level: 'strong', score: 0.72 + through * 0.16, problem: null }
+  }
+  return {
+    level: 'excellent',
+    score: Math.min(1, 0.9 + (bits - EXCELLENT_BITS) / 400),
+    problem: null,
+  }
 }
