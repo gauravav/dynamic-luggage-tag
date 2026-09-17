@@ -7,7 +7,8 @@
  */
 
 import { expect, test } from '@playwright/test'
-import { APP, SIGNED_OUT, createTag } from './helpers'
+import { APP, PASSWORD, SIGNED_OUT, createTag, owner } from './helpers'
+import { secretFromUri, totp } from './totp'
 
 test.describe('favicon', () => {
   test.use({ storageState: SIGNED_OUT })
@@ -392,6 +393,89 @@ test.describe('the password meter', () => {
       expect(widths[index]!, `${candidates[index]!.label} should fill further`).toBeGreaterThan(
         widths[index - 1]!,
       )
+    }
+  })
+})
+
+test.describe('two-factor', () => {
+  /**
+   * The whole enrolment, behaving like a real authenticator.
+   *
+   * The suite reads the secret out of the provisioning URI the page was given,
+   * generates codes from it (tests/e2e/totp.ts, checked against the RFC 6238
+   * vector) and signs in with one. Anything less would only prove a form
+   * exists, which is the part least likely to be broken.
+   *
+   * It runs on the shared account, so it always turns two-factor back off —
+   * otherwise every later run would need a code to sign in.
+   */
+  test('scans, enables, signs in with a code, and turns back off', async ({ page, browser }) => {
+    const { email } = await owner()
+    await page.goto(`${APP}/app/settings`)
+
+    const setup = page.waitForResponse('**/auth/totp/setup')
+    await page.getByRole('button', { name: 'Set up two-factor' }).click()
+    const issued = await (await setup).json()
+    const secret = secretFromUri(issued.otpauth_uri)
+
+    try {
+      // The symbol is on screen and actually drew — a broken or unparseable
+      // image still occupies the element, but decodes to nothing.
+      const symbol = page.getByAltText('QR code for setting up two-factor authentication')
+      await expect(symbol).toBeVisible()
+      const drawn = await symbol.evaluate((img) => {
+        const image = img as HTMLImageElement
+        return { w: image.naturalWidth, h: image.naturalHeight, src: image.src }
+      })
+      expect(drawn.w).toBeGreaterThan(0)
+      expect(drawn.h).toBeGreaterThan(0)
+      // And it is the symbol the server issued, not a placeholder.
+      expect(decodeURIComponent(drawn.src)).toContain(issued.qr_svg.slice(0, 60))
+
+      // The typed-by-hand path offers the same secret, grouped to be readable.
+      // Located by element, not by its words: the summary renders a curly
+      // apostrophe, and matching it by text is a trap for the next person.
+      await page.locator('.totp-manual summary').click()
+      const shown = await page.locator('.totp-secret').innerText()
+      expect(shown.replace(/\s/g, '')).toBe(secret)
+
+      await page.fill('#totp_code', totp(secret))
+      await page.getByRole('button', { name: 'Turn on two-factor' }).click()
+
+      await expect(page.getByText('Save these recovery codes now.')).toBeVisible()
+      const codes = (await page.locator('.code-block').first().innerText()).trim().split('\n')
+      expect(codes).toHaveLength(10)
+      await expect(page.getByRole('button', { name: 'Copy all' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Download as a file' })).toBeVisible()
+      await expect(page.getByText('On. A code from your authenticator is required')).toBeVisible()
+
+      // Now sign in somewhere else, as the enrolled authenticator.
+      const elsewhere = await browser.newContext({ storageState: SIGNED_OUT })
+      const fresh = await elsewhere.newPage()
+      await fresh.goto(`${APP}/login`)
+      await fresh.fill('#email', email)
+      await fresh.fill('#password', PASSWORD)
+      await fresh.click('button[type="submit"]')
+
+      await expect(fresh.getByText('Enter the six-digit code')).toBeVisible()
+      await fresh.fill('#totp_code', totp(secret))
+      await fresh.click('button[type="submit"]')
+      await fresh.waitForURL('**/app')
+      await elsewhere.close()
+    } finally {
+      // Always, even if the above failed part-way: a shared account left with
+      // two-factor on cannot be signed into by the next run. Wrapped, because
+      // a cleanup that throws would hide the failure it is cleaning up after.
+      try {
+        await page.goto(`${APP}/app/settings`)
+        if (await page.locator('#totp_password').count()) {
+          await page.fill('#totp_password', PASSWORD)
+          await page.getByRole('button', { name: 'Turn off two-factor' }).click()
+          await expect(page.getByText('Off. Your password alone is enough')).toBeVisible()
+        }
+      } catch (cause) {
+        console.warn('could not turn two-factor back off:', cause)
+      }
     }
   })
 })

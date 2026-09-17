@@ -15,33 +15,43 @@ import segno
 # denser symbol.
 ERROR_CORRECTION = "q"
 
+# A symbol that is only ever scanned off a clean screen, once, does not need
+# that. M keeps it noticeably coarser, which is easier for a phone camera held
+# at arm's length in front of a laptop.
+SCREEN_ERROR_CORRECTION = "m"
+
 
 def scan_url(base_url: str, token: str) -> str:
     return f"{base_url.rstrip('/')}/t/{token}"
 
 
-def encode(data: str) -> segno.QRCode:
-    return segno.make(data, error=ERROR_CORRECTION, micro=False)
+def encode(data: str, *, error: str = ERROR_CORRECTION) -> segno.QRCode:
+    return segno.make(data, error=error, micro=False)
 
 
-def matrix(data: str) -> list[list[int]]:
+def matrix(data: str, *, error: str = ERROR_CORRECTION) -> list[list[int]]:
     """The module grid without a quiet zone, as rows of 0/1.
 
     The caller adds its own quiet zone, because the margin has to be measured
     in the units of the medium it is drawn into.
     """
-    return [list(row) for row in encode(data).matrix]
+    return [list(row) for row in encode(data, error=error).matrix]
 
 
 def to_svg(
-    data: str, *, size_px: int = 220, dark: str = "#242017", light: str | None = None
+    data: str,
+    *,
+    size_px: int = 220,
+    dark: str = "#242017",
+    light: str | None = None,
+    error: str = ERROR_CORRECTION,
 ) -> str:
     """A standalone SVG symbol, for the dashboard and the scan page."""
     import io
 
     # segno writes encoded bytes, so a text buffer raises TypeError here.
     buffer = io.BytesIO()
-    encode(data).save(
+    encode(data, error=error).save(
         buffer,
         kind="svg",
         scale=1,
@@ -63,6 +73,6 @@ def to_svg(
     # ill-formed, and a browser opening the file directly refuses to render it
     # at all rather than picking one — so only supply it if it is missing.
     if "viewBox=" not in svg:
-        modules = encode(data).symbol_size(scale=1, border=2)[0]
+        modules = encode(data, error=error).symbol_size(scale=1, border=2)[0]
         attributes += f' viewBox="0 0 {modules} {modules}"'
     return svg.replace("<svg ", f"<svg {attributes} ", 1)

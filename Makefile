@@ -83,5 +83,5 @@ clean: ## Remove build artefacts (keeps data and secrets)
 deploy: ## Deploy: pull, install deps, migrate, build web, restart the service
 	@./infra/scripts/deploy.sh
 
-e2e: ## Run the browser tests (starts its own API and web server)
-	@./infra/scripts/e2e.sh
+e2e: ## Run the browser tests: make e2e [ARGS="-g pattern"]
+	@./infra/scripts/e2e.sh $(ARGS)

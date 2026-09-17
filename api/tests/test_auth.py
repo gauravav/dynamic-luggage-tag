@@ -427,6 +427,74 @@ class TestPasswordReset:
 
 
 class TestTotp:
+    def test_setup_returns_a_scannable_symbol(self, client, outbox):
+        """The setup step has to be completable by pointing a phone at it.
+
+        Reading a 32-character base32 key off one screen and typing it into
+        another is the step people abandon two-factor at.
+        """
+        import urllib.parse
+        import xml.etree.ElementTree as ElementTree
+
+        import pyotp
+
+        csrf, email = register_and_sign_in(client, outbox)
+        body = client.post("/api/v1/auth/totp/setup", headers=auth_headers(csrf)).get_json()
+
+        # The symbol has to encode the same secret the response hands over, or
+        # scanning it enrols an authenticator that can never produce a code
+        # this account accepts.
+        uri = urllib.parse.urlparse(body["otpauth_uri"])
+        assert uri.scheme == "otpauth" and uri.netloc == "totp"
+        query = urllib.parse.parse_qs(uri.query)
+        assert query["secret"] == [body["secret"]]
+        assert query["issuer"] == ["Dynamic Luggage Tag"]
+        assert email in urllib.parse.unquote(uri.path)
+
+        # And a code from that secret is the one the enable step accepts.
+        enabled = client.post(
+            "/api/v1/auth/totp/enable",
+            json={"code": pyotp.TOTP(query["secret"][0]).now()},
+            headers=auth_headers(csrf),
+        )
+        assert enabled.status_code == 200
+
+        # noqa justified: the symbol is our own renderer's output.
+        root = ElementTree.fromstring(body["qr_svg"])  # noqa: S314
+        assert root.tag == "{http://www.w3.org/2000/svg}svg"
+        assert root.get("viewBox") and root.get("width")
+
+        # It encodes this URI and not some constant: the same input gives the
+        # same symbol, a different one gives a different symbol.
+        from app.core import qr
+
+        assert qr.to_svg(body["otpauth_uri"], error=qr.SCREEN_ERROR_CORRECTION) == qr.to_svg(
+            body["otpauth_uri"], error=qr.SCREEN_ERROR_CORRECTION
+        )
+        assert qr.to_svg(body["otpauth_uri"]) != qr.to_svg(body["otpauth_uri"] + "x")
+
+    def test_the_symbol_never_leaves_the_secret_in_a_url(self, client, outbox):
+        """A provisioning URI carries the shared secret.
+
+        Served from an endpoint of its own it would land in an access log, a
+        browser history entry and a referrer header; inlined in this response
+        it is no more exposed than the secret printed beside it.
+        """
+        csrf, _ = register_and_sign_in(client, outbox)
+        response = client.post("/api/v1/auth/totp/setup", headers=auth_headers(csrf))
+
+        assert "no-store" in response.headers["Cache-Control"]
+        body = response.get_json()
+        assert body["qr_svg"].lstrip().startswith("<svg")
+
+        # Self-contained: the symbol references nothing it would have to fetch,
+        # so rendering it cannot put the secret into another request.
+        assert "href" not in body["qr_svg"]
+        assert "<image" not in body["qr_svg"]
+
+        # And there is no GET route that would serve it from a URL instead.
+        assert client.get("/api/v1/auth/totp/setup").status_code == 405
+
     def test_setup_enable_and_sign_in(self, client, app, outbox):
         import pyotp
 

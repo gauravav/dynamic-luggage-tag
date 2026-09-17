@@ -18,6 +18,7 @@ import pyotp
 from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import select
 
+from ..core import qr
 from ..errors import ApiError
 from ..extensions import app_config, db_session, keyring, limiter
 from ..models import Session, User, utcnow
@@ -655,7 +656,13 @@ def totp_setup():
 
     address = crypto.read_user(user, "email") or "account"
     uri = pyotp.TOTP(secret).provisioning_uri(name=address, issuer_name="Dynamic Luggage Tag")
-    return jsonify({"secret": secret, "otpauth_uri": uri})
+    # The symbol is rendered here rather than fetched from a URL of its own:
+    # a provisioning URI contains the shared secret, and a secret in a URL
+    # ends up in an access log, a browser history entry and a referrer header.
+    # In this response it is no more exposed than the secret beside it, and
+    # every API response is already no-store.
+    symbol = qr.to_svg(uri, size_px=200, dark="#242017", error=qr.SCREEN_ERROR_CORRECTION)
+    return jsonify({"secret": secret, "otpauth_uri": uri, "qr_svg": symbol})
 
 
 @bp.post("/totp/enable")

@@ -195,6 +195,9 @@ function TwoFactorSection({
 }) {
   const [secret, setSecret] = useState<string | null>(null)
   const [uri, setUri] = useState<string | null>(null)
+  const [symbol, setSymbol] = useState<string | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
+  const [copied, setCopied] = useState<'secret' | 'codes' | null>(null)
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [codes, setCodes] = useState<string[] | null>(null)
@@ -205,9 +208,13 @@ function TwoFactorSection({
     setBusy(true)
     setError(null)
     try {
-      const body = await api.post<{ secret: string; otpauth_uri: string }>('/auth/totp/setup')
+      const body = await api.post<{ secret: string; otpauth_uri: string; qr_svg: string }>(
+        '/auth/totp/setup',
+      )
       setSecret(body.secret)
       setUri(body.otpauth_uri)
+      setSymbol(body.qr_svg)
+      setShowSecret(false)
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not start setup.')
     } finally {
@@ -224,12 +231,24 @@ function TwoFactorSection({
       setCodes(body.recovery_codes)
       setSecret(null)
       setUri(null)
+      setSymbol(null)
       setCode('')
       await onChanged()
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'That code is not valid.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function copy(what: 'secret' | 'codes', text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(what)
+      window.setTimeout(() => setCopied(null), 2400)
+    } catch {
+      // Clipboard access can be refused; the value is on screen to select.
+      setCopied(null)
     }
   }
 
@@ -275,6 +294,18 @@ function TwoFactorSection({
               </motion.div>
             ))}
           </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => copy('codes', codes.join('\n'))}
+            >
+              {copied === 'codes' ? 'Codes copied' : 'Copy all'}
+            </button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => download(codes)}>
+              Download as a file
+            </button>
+          </div>
         </Notice>
       )}
 
@@ -294,15 +325,59 @@ function TwoFactorSection({
         </form>
       ) : secret ? (
         <form onSubmit={enable}>
-          <p className="faint">
-            Add this secret to your authenticator app, then enter the code it shows.
+          <p className="faint" style={{ marginBottom: 14 }}>
+            Scan this with your authenticator app — 1Password, Authy, Google Authenticator, or any
+            other — then enter the six-digit code it starts showing.
           </p>
-          <p className="code-block">{secret}</p>
-          {uri && (
-            <p className="faint" style={{ overflowWrap: 'anywhere' }}>
-              Or use this setup link: {uri}
-            </p>
+
+          {symbol && (
+            <motion.div
+              className="totp-qr"
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+            >
+              {/*
+                A data URI in an <img>, rather than the markup inlined into the
+                page: an SVG loaded as an image cannot run script, so a symbol
+                arriving from the server is drawn and nothing more. The app's
+                policy allows `img-src data:` for exactly this.
+              */}
+              <img
+                src={`data:image/svg+xml;utf8,${encodeURIComponent(symbol)}`}
+                alt="QR code for setting up two-factor authentication"
+                width={200}
+                height={200}
+              />
+            </motion.div>
           )}
+
+          <details
+            className="totp-manual"
+            open={showSecret}
+            onToggle={(event) => setShowSecret((event.target as HTMLDetailsElement).open)}
+          >
+            <summary>Can&#8217;t scan it? Enter the key by hand</summary>
+            <p className="faint" style={{ margin: '10px 0 8px' }}>
+              Add a new account in your app, choose to type a setup key, and use this one.
+            </p>
+            {/* Grouped in fours: this gets read off one screen and typed into
+                another, and an unbroken run of 32 characters loses its place. */}
+            <p className="code-block totp-secret">{group(secret)}</p>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => copy('secret', secret)}
+            >
+              {copied === 'secret' ? 'Key copied' : 'Copy the key'}
+            </button>
+            {uri && (
+              <p className="faint" style={{ marginTop: 12, marginBottom: 0 }}>
+                Time-based, 6 digits, 30-second period — the defaults in every app.
+              </p>
+            )}
+          </details>
+
           <Field
             label="Code from your app"
             name="totp_code"
@@ -312,9 +387,24 @@ function TwoFactorSection({
             maxLength={8}
             autoComplete="one-time-code"
           />
-          <button type="submit" className="btn btn--primary btn--sm" disabled={busy || !code}>
-            Turn on two-factor
-          </button>
+          <div className="row">
+            <button type="submit" className="btn btn--primary btn--sm" disabled={busy || !code}>
+              <BusyLabel busy={busy} idle="Turn on two-factor" working="Checking…" />
+            </button>
+            <button
+              type="button"
+              className="btn btn--quiet btn--sm"
+              disabled={busy}
+              onClick={() => {
+                setSecret(null)
+                setUri(null)
+                setSymbol(null)
+                setCode('')
+              }}
+            >
+              Cancel
+            </button>
+          </div>
         </form>
       ) : (
         <button type="button" className="btn btn--ghost btn--sm" onClick={startSetup} disabled={busy}>
@@ -323,6 +413,39 @@ function TwoFactorSection({
       )}
     </section>
   )
+}
+
+/** The setup key in groups of four, for reading off one screen onto another. */
+function group(secret: string): string {
+  return (secret.match(/.{1,4}/g) ?? [secret]).join(' ')
+}
+
+/**
+ * Saves the recovery codes as a text file.
+ *
+ * They are shown exactly once, and "copy" leaves them in a clipboard that the
+ * next copy overwrites — which is a poor place for the only thing standing
+ * between you and a locked account.
+ */
+function download(codes: string[]): void {
+  const body = [
+    'Dynamic Luggage Tag — two-factor recovery codes',
+    '',
+    'Each code works once. Keep them somewhere other than the phone that',
+    'holds your authenticator app, or a lost phone locks you out of both.',
+    '',
+    ...codes,
+    '',
+  ].join('\n')
+
+  const url = URL.createObjectURL(new Blob([body], { type: 'text/plain' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'dynamic-luggage-tag-recovery-codes.txt'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 function SessionsSection() {
