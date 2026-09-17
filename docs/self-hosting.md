@@ -249,6 +249,22 @@ script` error means a Content-Security-Policy is blocking the app — check that
 nothing in front of the dev server (a proxy, a browser extension, a corporate
 filter) is injecting its own policy.
 
+**Turnstile silently fails, or the console shows a CSP violation for
+`challenges.cloudflare.com`.** Your production CSP header hasn't been updated
+to match the snippet above — see *Security headers in production*.
+
+**The console shows a CSP violation for
+`static.cloudflareinsights.com/beacon.min.js`.** That script isn't part of
+this app. If the site is proxied through Cloudflare (orange-cloud DNS, or a
+`cloudflared` tunnel), Cloudflare injects that beacon itself when **Web
+Analytics** auto-injection is turned on for the zone — it's added to the HTML
+after your CSP header is already sent, so the browser blocks it. Turn off
+auto-injection in the Cloudflare dashboard (**Speed → Optimization** or
+**Analytics → Web Analytics**) rather than loosening the CSP for a script the
+app doesn't use; if you do want Cloudflare's analytics, add
+`https://static.cloudflareinsights.com` to both `script-src` and
+`connect-src` instead.
+
 **The browser will not connect at all.** If you have previously run an HTTPS
 project on `localhost`, the browser may have cached an HSTS entry that forces
 `https://localhost:5173`, which the dev server does not speak. Clear it at
