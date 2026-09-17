@@ -17,7 +17,13 @@
 // API is always reached under whatever path the app itself is served from.
 export const API_BASE = `${import.meta.env.BASE_URL}api/v1`.replace(/\/{2,}/g, '/')
 
-const CSRF_COOKIE = 'dlt_csrf'
+// Over HTTPS the API issues this cookie with the __Host- prefix (see
+// cookie_name() in api/app/security/sessions.py), which pins it to this exact
+// origin. Plain-HTTP development drops the prefix, because browsers refuse
+// __Host- cookies without Secure. Both names must be read: matching only the
+// bare name finds nothing in production, so every state-changing request goes
+// out without a token and the API rejects it as "CSRF token is missing".
+const CSRF_COOKIE_NAMES = ['__Host-dlt_csrf', 'dlt_csrf']
 const CSRF_HEADER = 'X-CSRF-Token'
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -44,9 +50,18 @@ export class ApiError extends Error {
  * can read it, which is exactly the property the double-submit check relies
  * on. The session cookie itself stays HttpOnly and is never touched here.
  */
-function csrfToken(): string | null {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE}=([^;]*)`))
-  return match?.[1] ? decodeURIComponent(match[1]) : null
+export function csrfToken(cookies: string = document.cookie): string | null {
+  for (const name of CSRF_COOKIE_NAMES) {
+    for (const pair of cookies.split(';')) {
+      const separator = pair.indexOf('=')
+      if (separator === -1) continue
+      if (pair.slice(0, separator).trim() === name) {
+        const value = pair.slice(separator + 1).trim()
+        if (value) return decodeURIComponent(value)
+      }
+    }
+  }
+  return null
 }
 
 interface RequestOptions {
