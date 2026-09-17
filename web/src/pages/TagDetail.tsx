@@ -7,10 +7,12 @@ import {
   downloadAsset,
   openAsset,
   parseLocation,
+  type NameDisclosure,
   type ScanRecord,
   type Tag,
 } from '../api/client'
 import { IconPicker } from '../components/IconPicker'
+import { WatchNotice } from '../components/WatchNotice'
 import { NfcCard } from '../components/NfcCard'
 import { PageLoader } from '../components/PageLoader'
 import { TagArt } from '../components/TagArt'
@@ -127,7 +129,7 @@ export function TagDetail() {
   async function rotate() {
     if (!tagId) return
     const confirmed = window.confirm(
-      'Issue a new code? Every printed copy of this tag stops working, and any open conversation with a finder is closed.',
+      'Issue a new code?\n\nThe code printed on the tag keeps working — a finder can still reach you — but it can never publish your name again, and any open conversation is closed.\n\nReprint when convenient, not before.',
     )
     if (!confirmed) return
     setBusy(true)
@@ -136,9 +138,7 @@ export function TagDetail() {
       const body = await api.post<{ tag: Tag; threads_closed: number }>(`/tags/${tagId}/rotate`)
       setTag(body.tag)
       setInfo(
-        body.tag.nfc_linked
-          ? 'A new code was issued. Print the tag again, and rewrite the NFC sticker from a phone.'
-          : 'A new code was issued. Print the tag again before using it.',
+        'A new code was issued. The old one still gets a bag home but can no longer publish your name, so reprint whenever it suits you.',
       )
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not rotate the code.')
@@ -214,6 +214,11 @@ export function TagDetail() {
 
       <div className="grid grid--split" style={{ alignItems: 'start' }}>
         <Stagger className="stack">
+          {tag.watched && (
+            <StaggerItem>
+              <WatchNotice tag={tag} onBlockRetired={() => patch({ block_retired_tokens: true })} busy={busy} />
+            </StaggerItem>
+          )}
           <StaggerItem>
           <motion.section
             className="card status-card"
@@ -225,7 +230,9 @@ export function TagDetail() {
               label="Report this bag lost"
               hint={
                 isLost
-                  ? 'Your name and a message link are visible to anyone who scans this tag.'
+                  ? tag.name_disclosure === 'always'
+                    ? 'Your name is visible to anyone who scans this tag.'
+                    : 'A finder can message you. Your name stays unpublished.'
                   : 'While safe, a scan shows nothing personal at all.'
               }
               checked={isLost}
@@ -235,7 +242,9 @@ export function TagDetail() {
                 patch(
                   { status: next ? 'lost' : 'safe' },
                   next
-                    ? 'Marked lost. A finder who scans this tag now sees your name.'
+                    ? tag.name_disclosure === 'always'
+                      ? 'Marked lost. Anyone who scans this tag now sees your name.'
+                      : 'Marked lost. A finder can message you; your name is released when you reply.'
                     : 'Marked safe. Personal details are hidden again.',
                 )
               }
@@ -251,13 +260,12 @@ export function TagDetail() {
           <StaggerItem>
           <section className="card">
             <h3 style={{ marginBottom: 14 }}>What a finder sees when it is lost</h3>
-            <div className="stack stack--tight">
-              <Toggle
-                label="Show my name"
-                checked={tag.reveal_name}
-                disabled={busy}
-                onChange={(next) => patch({ reveal_name: next })}
-              />
+            <NameDisclosureChoice
+              value={tag.name_disclosure}
+              disabled={busy}
+              onChange={(next) => patch({ name_disclosure: next })}
+            />
+            <div className="stack stack--tight" style={{ marginTop: 14 }}>
               <Toggle
                 label="Allow messages"
                 hint="Relayed through the app. They never see your number or address."
@@ -565,5 +573,60 @@ function TagFaces({
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * How the owner's name reaches a finder.
+ *
+ * Three settings rather than a switch, because the useful one is in the
+ * middle. A scan code is a bearer credential with no expiry: anyone who
+ * scanned the bag while it was safe can keep the link and watch it. `always`
+ * hands that person the name the moment the bag is reported lost. Releasing it
+ * per conversation costs a genuine finder nothing — they never needed the name
+ * to return a bag, only a way to say they have it.
+ */
+function NameDisclosureChoice({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: NameDisclosure
+  disabled?: boolean
+  onChange: (next: NameDisclosure) => void
+}) {
+  const options: { value: NameDisclosure; label: string; hint: string }[] = [
+    {
+      value: 'on_reply',
+      label: 'When I reply to a finder',
+      hint: 'They message you first; answering releases your name to that conversation only.',
+    },
+    {
+      value: 'always',
+      label: 'To anyone who scans it',
+      hint: 'Fastest, and visible to anyone holding a copy of the link — including one saved before the bag was lost.',
+    },
+    { value: 'never', label: 'Never', hint: 'Messages only. Your name is not shown at any point.' },
+  ]
+
+  return (
+    <fieldset className="choice" disabled={disabled}>
+      <legend className="field__label-text">Show my name</legend>
+      {options.map((option) => (
+        <label key={option.value} className={`choice__option${value === option.value ? ' is-selected' : ''}`}>
+          <input
+            type="radio"
+            name="name-disclosure"
+            value={option.value}
+            checked={value === option.value}
+            onChange={() => onChange(option.value)}
+          />
+          <span>
+            <span className="choice__label">{option.label}</span>
+            <span className="choice__hint">{option.hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   )
 }

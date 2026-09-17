@@ -97,7 +97,12 @@ export function RelayPage() {
   return (
     <div className="page wrap wrap--narrow">
       <p className="kicker">relayed conversation</p>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>You and the owner</h1>
+      {/* The owner's name appears here, if at all — released to this one
+          conversation when they answered you, rather than published to whoever
+          holds a copy of the tag's link. */}
+      <h1 style={{ fontSize: 24, marginBottom: 8 }}>
+        {thread.owner?.name ? `You and ${thread.owner.name}` : 'You and the owner'}
+      </h1>
       <p className="faint" style={{ marginBottom: 24 }}>
         Neither side sees the other&#8217;s phone number or email address. This conversation is
         deleted {relativeTime(thread.expires_at)}.

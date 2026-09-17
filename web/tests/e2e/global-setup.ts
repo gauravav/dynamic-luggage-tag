@@ -61,27 +61,38 @@ async function reusableSession(): Promise<boolean> {
 }
 
 /**
- * Clears the tags left behind by previous runs.
+ * Puts the reused account back to a known state.
  *
- * Each run makes a handful, an account is capped at 25, and the session is
- * reused — so without this the suite works for three or four runs and then
- * starts failing on a limit that has nothing to do with what it is testing.
+ * Two things accumulate otherwise. Tags: each run makes a handful and an
+ * account is capped at 25, so the suite would work for three or four runs and
+ * then fail on a limit that has nothing to do with what it is testing. And
+ * two-factor: the test that enables it turns it back off at the end, but a run
+ * killed part-way leaves it on — and then every later run fails at a sign-in
+ * it has no code for. Neither belongs in the test that tripped over it.
  */
-async function clearTags(): Promise<void> {
+async function resetAccount(): Promise<void> {
   const state = JSON.parse(await readFile(STATE_FILE, 'utf8'))
   const { csrf } = JSON.parse(await readFile(ACCOUNT_FILE, 'utf8'))
   const context = await request.newContext({
     storageState: state,
     extraHTTPHeaders: { Origin: APP, 'X-CSRF-Token': csrf },
   })
+
   const { tags } = await (await context.get(`${API}/tags`)).json()
   for (const tag of tags) await context.delete(`${API}/tags/${tag.id}`)
+
+  const { user } = await (await context.get(`${API}/auth/session`)).json()
+  if (user?.totp_enabled) {
+    const off = await context.post(`${API}/auth/totp/disable`, { data: { password: PASSWORD } })
+    if (!off.ok()) throw new Error(`could not clear two-factor: ${await off.text()}`)
+  }
+
   await context.dispose()
 }
 
 export default async function globalSetup() {
   if (await reusableSession()) {
-    await clearTags()
+    await resetAccount()
     return
   }
 

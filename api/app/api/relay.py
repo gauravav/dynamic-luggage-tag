@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from ..errors import ApiError
 from ..extensions import app_config, db_session, keyring, limiter
-from ..models import RelayMessage, RelayThread, User, utcnow
+from ..models import NAME_NEVER, NAME_ON_REPLY, RelayMessage, RelayThread, User, utcnow
 from ..schemas import RelayReplyIn, parse
 from ..security import audit
 from ..security.authz import login_required, require_user, user_crypto
@@ -281,12 +281,37 @@ def _serialize_thread(thread: RelayThread, crypto: UserCrypto, *, viewer: str) -
         ],
     }
     if viewer == "owner":
-        # The callback detail the finder typed, shown only to the owner. The
-        # finder never sees anything about the owner beyond the name already
-        # published on the lost page.
+        # The callback detail the finder typed, shown only to the owner.
         body["finder_contact"] = crypto.read_thread(thread, "finder_contact")
         body["tag_id"] = str(thread.tag_id)
+    else:
+        body["owner"] = _owner_name_for_finder(thread, crypto)
     return body
+
+
+def _owner_name_for_finder(thread: RelayThread, crypto: UserCrypto) -> dict | None:
+    """The owner's name, if this conversation has earned it.
+
+    Under `on_reply` the name is not published to whoever presents a scan code
+    — it is released here, into one conversation, once the owner has answered
+    the person in it. That is the difference between telling everyone who ever
+    saved the URL and telling the one person who says they are holding the bag.
+
+    Nothing else about the owner is ever added to a finder's view.
+    """
+    tag = thread.tag
+    if tag is None or tag.name_disclosure == NAME_NEVER:
+        return None
+    if tag.name_disclosure == NAME_ON_REPLY and not any(
+        message.sender == "owner" for message in thread.messages
+    ):
+        return None
+
+    owner = db_session().get(User, thread.user_id)
+    if owner is None:
+        return None
+    name = crypto.read_user(owner, "name")
+    return {"name": name} if name else None
 
 
 def _preview(crypto: UserCrypto, thread: RelayThread) -> str | None:

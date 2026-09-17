@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError, fi
 
 from ..core.icons import ICON_COLORS, ICON_NAMES
 from ..errors import ApiError
+from ..models import NAME_DISCLOSURE
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -199,9 +200,19 @@ class TagCreateIn(TagAppearance):
 class TagUpdateIn(TagAppearance):
     label: str | None = Field(default=None, max_length=80)
     status: str | None = Field(default=None, max_length=8)
-    reveal_name: bool | None = None
+    name_disclosure: str | None = Field(default=None, max_length=16)
     reveal_message_relay: bool | None = None
     notify_on_scan: bool | None = None
+    block_retired_tokens: bool | None = None
+
+    @field_validator("name_disclosure")
+    @classmethod
+    def _known_disclosure(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in NAME_DISCLOSURE:
+            raise ValueError("Pick one of the offered disclosure settings.")
+        return value
 
     @field_validator("status")
     @classmethod

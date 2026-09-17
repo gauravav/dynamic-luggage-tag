@@ -499,3 +499,103 @@ test.describe('two-factor', () => {
     }
   })
 })
+
+test.describe('the saved-link watcher', () => {
+  /**
+   * Someone who handles a bag can scan it while it is marked safe, learn
+   * nothing, and keep the URL. Polling it costs them nothing, and the moment
+   * the owner reports the bag lost the old design handed them a name.
+   *
+   * This drives the whole thing through the interface: watch, wait, flip,
+   * poll again — then check that a real finder still gets the bag home.
+   */
+  test('gains nothing when the bag is reported lost, but a finder still does', async ({
+    page,
+    browser,
+    request,
+  }) => {
+    const tag = await createTag(page, request, { label: 'Watched bag' })
+    const token = tag.scan_url.split('/t/')[1]
+
+    const outside = await browser.newContext({ storageState: SIGNED_OUT })
+    const watcher = await outside.newPage()
+
+    // Scanned while safe: nothing to learn.
+    await watcher.goto(`${APP}/t/${token}`)
+    await expect(watcher.getByText('This bag has not been reported lost.')).toBeVisible()
+
+    // The owner reports it lost, from the app. The cards cascade in on load,
+    // so the switch is still moving for a moment after it is visible.
+    await page.goto(`${APP}/app/tags/${tag.id}`)
+    const lostSwitch = page.getByLabel(/Report this bag lost/)
+    await expect(lostSwitch).toBeVisible()
+    await page.waitForTimeout(1200)
+    // click(), not check(): the switch is controlled by state that only
+    // updates once the PATCH returns, so check() sees it still unset, clicks
+    // again, and toggles the bag back to safe.
+    await lostSwitch.click()
+    await expect(page.getByText(/Marked lost/)).toBeVisible()
+    await expect(lostSwitch).toBeChecked()
+
+    // The saved URL, polled again.
+    await watcher.goto(`${APP}/t/${token}`)
+    await expect(watcher.getByText('Reported lost')).toBeVisible()
+    await expect(watcher.getByText('Gaurav Avula')).toHaveCount(0)
+
+    // A finder messages, the owner answers, and only then is the name released
+    // — to that conversation.
+    await watcher.getByLabel('Your message').fill('I have your bag at DFW, claim 3.')
+    await watcher.getByRole('button', { name: /Send message/ }).click()
+    await expect(watcher.getByText('Message sent')).toBeVisible()
+    const relayUrl = (await watcher.locator('.code-block').first().innerText()).trim()
+
+    // This account accumulates conversations across the suite, so open the
+    // one belonging to this tag rather than whichever happens to be first.
+    await page.goto(`${APP}/app/inbox`)
+    await page
+      .locator('.inbox__list .list__item', { hasText: 'Watched bag' })
+      .first()
+      .getByRole('button')
+      .first()
+      .click()
+    await page.getByLabel('Reply').fill('Thank you — on my way.')
+    await page.getByRole('button', { name: /Send/ }).first().click()
+    await expect(page.getByText('Thank you — on my way.')).toBeVisible()
+
+    await watcher.goto(relayUrl)
+    await expect(watcher.getByRole('heading', { name: /You and Gaurav Avula/ })).toBeVisible()
+
+    // And still not to anyone else holding the code.
+    await watcher.goto(`${APP}/t/${token}`)
+    await expect(watcher.getByText('Gaurav Avula')).toHaveCount(0)
+    await outside.close()
+  })
+
+  test('a rotated code still gets a bag home, and the owner is warned', async ({
+    page,
+    browser,
+    request,
+  }) => {
+    const tag = await createTag(page, request, { label: 'Rotated bag' })
+    const oldToken = tag.scan_url.split('/t/')[1]
+
+    page.on('dialog', (dialog) => dialog.accept())
+    await page.goto(`${APP}/app/tags/${tag.id}`)
+    await expect(page.getByRole('button', { name: 'Issue a new code' })).toBeVisible()
+    await page.waitForTimeout(1200)
+    await page.getByRole('button', { name: 'Issue a new code' }).click()
+    await expect(page.getByText(/A new code was issued/)).toBeVisible()
+
+    // The code printed on the bag has not changed, and still works.
+    const outside = await browser.newContext({ storageState: SIGNED_OUT })
+    const finder = await outside.newPage()
+    for (let attempt = 0; attempt < 4; attempt++) await finder.goto(`${APP}/t/${oldToken}`)
+    await expect(finder.getByText('This bag has not been reported lost.')).toBeVisible()
+    await outside.close()
+
+    // And the owner is told that a replaced code is in circulation.
+    await page.reload()
+    await expect(page.getByText('This tag looks like it is being watched')).toBeVisible()
+    await expect(page.getByText(/using a code you have already replaced/)).toBeVisible()
+  })
+})

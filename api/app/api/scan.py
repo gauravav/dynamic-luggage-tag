@@ -18,13 +18,24 @@ from __future__ import annotations
 import datetime as dt
 import json
 import uuid
+from dataclasses import dataclass
 
 from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import select
 
 from ..errors import ApiError
 from ..extensions import app_config, db_session, keyring, limiter
-from ..models import TAG_STATUS_LOST, RelayMessage, RelayThread, ScanEvent, Tag, User, utcnow
+from ..models import (
+    NAME_ALWAYS,
+    TAG_STATUS_LOST,
+    RelayMessage,
+    RelayThread,
+    RetiredToken,
+    ScanEvent,
+    Tag,
+    User,
+    utcnow,
+)
 from ..schemas import FinderMessageIn, ScanLocationIn, parse
 from ..security import audit, turnstile
 from ..security.crypto import DecryptionError, hash_token, new_token
@@ -36,8 +47,21 @@ from ..services.geo import CoarseLocation
 bp = Blueprint("scan", __name__, url_prefix="/scan")
 
 
-def _lookup(token: str) -> Tag:
-    """Resolves a scan token, or 404s.
+@dataclass(frozen=True)
+class Resolved:
+    """A tag, and whether the code used to reach it is the current one.
+
+    `retired` is the whole reason this is a pair rather than a Tag. A retired
+    code still resolves — the bag it is printed on may never have been
+    reprinted — but it is answered with less.
+    """
+
+    tag: Tag
+    retired: bool
+
+
+def _lookup(token: str) -> Resolved:
+    """Resolves a scan token, current or retired, or 404s.
 
     The token is hashed before the lookup, so the query never carries a value
     that would be usable if the query log were read.
@@ -46,15 +70,39 @@ def _lookup(token: str) -> Tag:
         raise ApiError("not_found", "This tag is not registered.", status=404)
 
     config = app_config()
-    tag = db_session().scalar(
-        select(Tag).where(
-            Tag.token_hash == hash_token(config.token_pepper, "tag", token),
-            Tag.revoked_at.is_(None),
-        )
-    )
-    if tag is None:
-        raise ApiError("not_found", "This tag is not registered.", status=404)
-    return tag
+    db = db_session()
+    token_hash = hash_token(config.token_pepper, "tag", token)
+
+    tag = db.scalar(select(Tag).where(Tag.token_hash == token_hash, Tag.revoked_at.is_(None)))
+    if tag is not None:
+        return Resolved(tag, retired=False)
+
+    # Not the current code. It may still be one this tag used to answer to —
+    # the code printed on a bag that was never reprinted after a rotation.
+    retired = db.scalar(select(RetiredToken).where(RetiredToken.token_hash == token_hash))
+    if retired is not None and retired.tag.revoked_at is None:
+        if retired.tag.block_retired_tokens:
+            # The owner has reprinted and asked for the old codes to stop.
+            raise ApiError("not_found", "This tag is not registered.", status=404)
+        return Resolved(retired.tag, retired=True)
+
+    raise ApiError("not_found", "This tag is not registered.", status=404)
+
+
+def _note_stale_read(tag: Tag) -> None:
+    """Counts a read that arrived with a retired code.
+
+    Deliberately a side effect of a GET, which the rest of this module avoids.
+    The thing being measured is automated polling of a saved URL, and a client
+    that never runs the page's JavaScript never reaches the POST — so counting
+    only what politely announces itself would miss exactly the traffic this
+    exists to see. It writes a counter, notifies nobody, and creates no row
+    describing whoever sent it.
+    """
+    now = utcnow()
+    tag.stale_scan_count += 1
+    if tag.last_stale_scan_at is None or (now - tag.last_stale_scan_at) > dt.timedelta(minutes=1):
+        tag.last_stale_scan_at = now
 
 
 def _owner(tag: Tag) -> User | None:
@@ -62,20 +110,39 @@ def _owner(tag: Tag) -> User | None:
     return user if user is not None and user.is_active else None
 
 
-def _public_body(tag: Tag, owner: User | None) -> dict:
+def _name_was_released(tag: Tag, *, retired: bool = False) -> bool:
+    """Whether this read actually put the owner's name in front of someone.
+
+    Not the same question as "is the bag lost". A tag set to `on_reply`, or one
+    reached with a retired code, shows no name however lost it is — and the
+    owner's scan history should say so rather than implying an exposure that
+    did not happen.
+    """
+    return tag.is_lost and tag.name_disclosure == NAME_ALWAYS and not retired
+
+
+def _public_body(tag: Tag, owner: User | None, *, retired: bool = False) -> dict:
     """What a finder is allowed to see, given the tag's current state."""
     body: dict = {
         "status": tag.status,
         "design": tag.design,
         "owner": None,
         "relay_available": False,
+        "retired_code": retired,
         "retention_days": app_config().scan_retention_days,
     }
 
     if tag.status != TAG_STATUS_LOST or owner is None:
         return body
 
-    if tag.reveal_name:
+    # `always` is the only setting that puts a name in front of whoever
+    # presents a code. `on_reply` holds it back until the owner answers a
+    # specific person in the relay, which is the setting that makes a saved
+    # URL worthless to someone who is not holding the bag.
+    #
+    # A retired code never gets the name, at any setting: it cannot be told
+    # apart from a link saved before the bag was ever reported lost.
+    if tag.name_disclosure == NAME_ALWAYS and not retired:
         try:
             crypto = unlock(keyring(), owner)
             name = crypto.read_user(owner, "name")
@@ -93,9 +160,22 @@ def _public_body(tag: Tag, owner: User | None) -> dict:
 @bp.get("/<token>")
 @limiter.limit("60 per hour")
 def read_scan_page(token: str):
-    """Read-only. Recording the scan is a separate, explicit POST."""
-    tag = _lookup(token)
-    return jsonify(_public_body(tag, _owner(tag)))
+    """Reveals nothing new. Recording the scan is a separate, explicit POST.
+
+    Two counters move here, and neither describes the caller. `page_fetch_count`
+    counts every read; `scan_count` only moves when a browser renders the page
+    and says so. The gap between them is what a polling loop looks like.
+    """
+    resolved = _lookup(token)
+    tag = resolved.tag
+    db = db_session()
+
+    tag.page_fetch_count += 1
+    if resolved.retired:
+        _note_stale_read(tag)
+    db.commit()
+
+    return jsonify(_public_body(tag, _owner(tag), retired=resolved.retired))
 
 
 @bp.post("/<token>/view")
@@ -107,7 +187,10 @@ def record_scan(token: str):
     is additionally cooled down per tag, so a bag drawing a few curious looks
     on a carousel produces one message rather than a stream.
     """
-    tag = _lookup(token)
+    # Named `scanned`, not `resolved`: the geo provider's result below already
+    # owns that name in this function.
+    scanned = _lookup(token)
+    tag = scanned.tag
     owner = _owner(tag)
     if owner is None:
         raise ApiError("not_found", "This tag is not registered.", status=404)
@@ -135,7 +218,7 @@ def record_scan(token: str):
         shared_location=False,
         ip_hash=ip_hash,
         client_label=client_label(request.headers.get("User-Agent")),
-        revealed_contact=tag.is_lost,
+        revealed_contact=_name_was_released(tag, retired=scanned.retired),
     )
     db.add(scan)
 
@@ -178,7 +261,7 @@ def record_scan(token: str):
             crypto=crypto,
             tag=tag,
             location=resolved,
-            revealed_contact=tag.is_lost,
+            revealed_contact=_name_was_released(tag),
             config=config,
         )
         if notified:
@@ -198,7 +281,7 @@ def share_location(token: str):
     changes nothing else about the page.
     """
     payload = parse(request, ScanLocationIn)
-    tag = _lookup(token)
+    tag = _lookup(token).tag
     owner = _owner(tag)
     if owner is None:
         raise ApiError("not_found", "This tag is not registered.", status=404)
@@ -227,7 +310,7 @@ def share_location(token: str):
             expires_at=utcnow() + dt.timedelta(days=config.scan_retention_days),
             ip_hash=ip_hash,
             client_label=client_label(request.headers.get("User-Agent")),
-            revealed_contact=tag.is_lost,
+            revealed_contact=_name_was_released(tag),
         )
         db.add(scan)
 
@@ -253,7 +336,7 @@ def send_message(token: str):
     account. Neither side ever sees the other's address or number.
     """
     payload = parse(request, FinderMessageIn)
-    tag = _lookup(token)
+    tag = _lookup(token).tag
     owner = _owner(tag)
     if owner is None:
         raise ApiError("not_found", "This tag is not registered.", status=404)

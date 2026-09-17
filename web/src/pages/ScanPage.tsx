@@ -252,6 +252,12 @@ function LostState({ token, data }: { token: string; data: ScanPageData }) {
           Thank you for scanning. Telling them where you found it is the fastest way to get it
           home.
         </p>
+        {data.retired_code && (
+          <p className="faint" style={{ margin: '12px 0 0' }}>
+            This tag&#8217;s code was replaced at some point, so the owner&#8217;s name is not shown
+            here. Your message still reaches them.
+          </p>
+        )}
       </Reveal>
 
       {data.relay_available && <MessageForm token={token} />}

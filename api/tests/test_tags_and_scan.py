@@ -70,7 +70,14 @@ class TestTagLifecycle:
         assert response.get_json()["tag"]["status"] == "lost"
         assert response.get_json()["tag"]["lost_at"] is not None
 
-    def test_rotating_the_token_invalidates_the_old_one(self, client, outbox):
+    def test_rotating_demotes_the_old_code_rather_than_killing_it(self, client, app, outbox):
+        """The bag still carries the old code printed on it.
+
+        Rotation has to be something an owner can do the moment they are
+        suspicious, which it is not if it bricks the tag until they reprint.
+        So the old code keeps getting a bag home — and stops being able to
+        publish a name.
+        """
         csrf, _ = register_and_sign_in(client, outbox)
         tag = _make_tag(client, csrf)
         old_token = _token_from_url(tag["scan_url"])
@@ -78,10 +85,84 @@ class TestTagLifecycle:
         rotated = client.post(
             f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf)
         ).get_json()["tag"]
-        assert _token_from_url(rotated["scan_url"]) != old_token
+        new_token = _token_from_url(rotated["scan_url"])
+        assert new_token != old_token
 
-        assert client.get(f"/api/v1/scan/{old_token}").status_code == 404
-        assert client.get(f"/api/v1/scan/{_token_from_url(rotated['scan_url'])}").status_code == 200
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"status": "lost", "name_disclosure": "always"},
+            headers=auth_headers(csrf),
+        )
+
+        # The current code behaves as the owner asked.
+        current = app.test_client().get(f"/api/v1/scan/{new_token}").get_json()
+        assert current["owner"]["name"] == "Rosa Fernandez"
+        assert current["retired_code"] is False
+
+        # The retired one resolves, says the bag is lost, and offers the relay
+        # — but publishes no name, whatever the setting says.
+        stale = app.test_client().get(f"/api/v1/scan/{old_token}")
+        assert stale.status_code == 200
+        body = stale.get_json()
+        assert body["status"] == "lost"
+        assert body["retired_code"] is True
+        assert body["owner"] is None
+        assert body["relay_available"] is True
+
+    def test_the_owner_can_stop_retired_codes_entirely(self, client, app, outbox):
+        """For an owner who has reprinted and wants the old ones gone."""
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        old_token = _token_from_url(tag["scan_url"])
+        client.post(f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf))
+
+        assert app.test_client().get(f"/api/v1/scan/{old_token}").status_code == 200
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"block_retired_tokens": True},
+            headers=auth_headers(csrf),
+        )
+        assert app.test_client().get(f"/api/v1/scan/{old_token}").status_code == 404
+
+    def test_reads_with_a_retired_code_are_reported_to_the_owner(self, client, app, outbox):
+        """Nobody holding the printed tag can produce a code it has replaced.
+
+        So the count is the owner's evidence that a link is in circulation.
+        """
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        old_token = _token_from_url(tag["scan_url"])
+        client.post(f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf))
+
+        stranger = app.test_client()
+        for _ in range(4):
+            stranger.get(f"/api/v1/scan/{old_token}")
+
+        seen = client.get(f"/api/v1/tags/{tag['id']}").get_json()["tag"]
+        assert seen["stale_scan_count"] == 4
+        assert seen["last_stale_scan_at"] is not None
+        assert seen["retired_code_count"] == 1
+        # Four reads with a replaced code is past the threshold on its own.
+        assert seen["watched"] is True
+
+    def test_reads_that_never_render_are_counted_separately(self, client, app, outbox):
+        """A polling loop fetches; it does not render and report back.
+
+        Neither counter says anything about who sent the request — the gap
+        between them is the whole signal.
+        """
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        token = _token_from_url(tag["scan_url"])
+
+        stranger = app.test_client()
+        for _ in range(25):
+            stranger.get(f"/api/v1/scan/{token}")
+
+        seen = client.get(f"/api/v1/tags/{tag['id']}").get_json()["tag"]
+        assert seen["page_fetch_count"] == 25
+        assert seen["scan_count"] == 0
+        assert seen["watched"] is True
 
     def test_deleting_a_tag_takes_its_scan_history_with_it(self, client, app, outbox):
         csrf, _ = register_and_sign_in(client, outbox)
@@ -126,6 +207,14 @@ class TestPublicScanPage:
             headers=auth_headers(csrf),
         )
 
+        # `always` is the setting that puts a name in front of whoever holds
+        # the code; the default no longer does. See TestSavedLinkWatcher.
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"name_disclosure": "always"},
+            headers=auth_headers(csrf),
+        )
+
         body = app.test_client().get(f"/api/v1/scan/{_token_from_url(tag['scan_url'])}").get_json()
         assert body["status"] == "lost"
         assert body["owner"]["name"] == "Rosa Fernandez"
@@ -141,7 +230,7 @@ class TestPublicScanPage:
         tag = _make_tag(client, csrf)
         client.patch(
             f"/api/v1/tags/{tag['id']}",
-            json={"status": "lost", "reveal_name": False},
+            json={"status": "lost", "name_disclosure": "never"},
             headers=auth_headers(csrf),
         )
         body = app.test_client().get(f"/api/v1/scan/{_token_from_url(tag['scan_url'])}").get_json()
@@ -252,6 +341,127 @@ class TestPublicScanPage:
         )
         scans = client.get(f"/api/v1/tags/{tag['id']}/scans").get_json()["scans"]
         assert "<script>" not in (scans[0]["location"] or "")
+
+
+class TestSavedLinkWatcher:
+    """The attack these tests exist for.
+
+    A scan code is a bearer credential with no expiry. Someone who handles a
+    bag — a porter, a neighbour on a carousel, anyone — can scan it while it is
+    marked safe, learn nothing at the time, and keep the URL. Polling it costs
+    them nothing. The moment the owner reports the bag lost, the old design
+    handed that watcher the owner's name, and told them the owner is away from
+    home and has just lost a bag.
+
+    The defence is not to detect the watcher, which cannot be done: a person
+    checking back to see whether the owner replied looks exactly the same. It
+    is to make the moment worth nothing — the name is released into one
+    conversation, to someone who has said they are holding the bag.
+    """
+
+    def _watched_tag(self, client, csrf, app):
+        tag = _make_tag(client, csrf)
+        token = _token_from_url(tag["scan_url"])
+        # The watcher scans once while the bag is safe, and learns nothing.
+        safe = app.test_client().get(f"/api/v1/scan/{token}").get_json()
+        assert safe["status"] == "safe"
+        assert safe["owner"] is None
+        return tag, token
+
+    def test_a_watcher_gains_nothing_when_the_bag_is_reported_lost(self, client, app, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag, token = self._watched_tag(client, csrf, app)
+
+        client.patch(
+            f"/api/v1/tags/{tag['id']}", json={"status": "lost"}, headers=auth_headers(csrf)
+        )
+
+        # The saved URL, polled again the moment the switch flips.
+        body = app.test_client().get(f"/api/v1/scan/{token}").get_json()
+        assert body["status"] == "lost"
+        assert body["owner"] is None, "a saved link must not be handed the owner's name"
+        assert body["relay_available"] is True, "but a real finder must still get the bag home"
+
+    def test_the_name_is_released_once_the_owner_answers_a_finder(self, client, app, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag, token = self._watched_tag(client, csrf, app)
+        client.patch(
+            f"/api/v1/tags/{tag['id']}", json={"status": "lost"}, headers=auth_headers(csrf)
+        )
+
+        finder = app.test_client()
+        opened = finder.post(
+            f"/api/v1/scan/{token}/message",
+            json={"body": "I have your bag at DFW, baggage claim 3."},
+        ).get_json()
+        relay = opened["relay_token"]
+
+        # Before the owner answers, the finder knows no more than the watcher.
+        before = finder.get(f"/api/v1/relay/{relay}").get_json()["thread"]
+        assert before["owner"] is None
+
+        threads = client.get("/api/v1/threads").get_json()["threads"]
+        client.post(
+            f"/api/v1/threads/{threads[0]['id']}/reply",
+            json={"body": "Thank you — I am on my way."},
+            headers=auth_headers(csrf),
+        )
+
+        # Answering this person releases the name to this conversation only.
+        after = finder.get(f"/api/v1/relay/{relay}").get_json()["thread"]
+        assert after["owner"]["name"] == "Rosa Fernandez"
+
+        # And still not to anyone else holding the code.
+        assert app.test_client().get(f"/api/v1/scan/{token}").get_json()["owner"] is None
+
+    def test_never_withholds_the_name_even_inside_a_conversation(self, client, app, outbox):
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag, token = self._watched_tag(client, csrf, app)
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"status": "lost", "name_disclosure": "never"},
+            headers=auth_headers(csrf),
+        )
+
+        finder = app.test_client()
+        relay = finder.post(f"/api/v1/scan/{token}/message", json={"body": "Found it."}).get_json()[
+            "relay_token"
+        ]
+        threads = client.get("/api/v1/threads").get_json()["threads"]
+        client.post(
+            f"/api/v1/threads/{threads[0]['id']}/reply",
+            json={"body": "Thank you."},
+            headers=auth_headers(csrf),
+        )
+
+        assert finder.get(f"/api/v1/relay/{relay}").get_json()["thread"]["owner"] is None
+
+    def test_scan_history_records_what_was_shown_not_what_was_implied(self, client, app, outbox):
+        """A lost bag whose name was never released did not reveal contact."""
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag, token = self._watched_tag(client, csrf, app)
+        client.patch(
+            f"/api/v1/tags/{tag['id']}", json={"status": "lost"}, headers=auth_headers(csrf)
+        )
+
+        app.test_client().post(
+            f"/api/v1/scan/{token}/view", environ_base={"REMOTE_ADDR": "203.0.113.7"}
+        )
+        scans = client.get(f"/api/v1/tags/{tag['id']}/scans").get_json()["scans"]
+        assert scans[0]["contact_revealed"] is False
+
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"name_disclosure": "always"},
+            headers=auth_headers(csrf),
+        )
+        # A different subnet, or this would be deduplicated against the scan
+        # above and never produce a second row to look at.
+        app.test_client().post(
+            f"/api/v1/scan/{token}/view", environ_base={"REMOTE_ADDR": "198.51.100.4"}
+        )
+        scans = client.get(f"/api/v1/tags/{tag['id']}/scans").get_json()["scans"]
+        assert scans[0]["contact_revealed"] is True
 
 
 class TestRelay:

@@ -224,10 +224,22 @@ export interface Tag {
   /** Names from the fixed lists in lib/icons.ts, or null for no icon. */
   icon: string | null
   icon_color: string | null
-  reveal_name: boolean
+  /** How the owner's name is released once the bag is reported lost. */
+  name_disclosure: NameDisclosure
   reveal_message_relay: boolean
   notify_on_scan: boolean
   scan_count: number
+  /**
+   * Every read of the scan page, including the ones no browser was behind.
+   * The gap between this and scan_count is what polling looks like.
+   */
+  page_fetch_count: number
+  stale_scan_count: number
+  last_stale_scan_at: string | null
+  block_retired_tokens: boolean
+  retired_code_count: number
+  /** The server's one-sentence verdict on those counts. */
+  watched: boolean
   last_scan_at: string | null
   created_at: string
   nfc_linked: boolean
@@ -254,6 +266,8 @@ export interface RelayMessage {
 }
 
 export interface RelayThread {
+  /** Present on the finder's view once the owner has released their name. */
+  owner?: { name: string | null } | null
   id: string
   opened_at: string
   expires_at: string
@@ -278,11 +292,23 @@ export interface ThreadSummary {
   preview: string | null
 }
 
+/**
+ * When the owner's name reaches a finder.
+ *
+ * `always` publishes it to whoever presents a scan code — including someone
+ * who saved the link months ago and has been waiting for the status to change.
+ * `on_reply` releases it into a single conversation, once the owner has
+ * answered the person in it.
+ */
+export type NameDisclosure = 'always' | 'on_reply' | 'never'
+
 export interface ScanPage {
   status: 'safe' | 'lost'
   design: DesignSpec
   owner: { name: string | null } | null
   relay_available: boolean
+  /** True when the code used to reach this page has since been replaced. */
+  retired_code: boolean
   retention_days: number
 }
 

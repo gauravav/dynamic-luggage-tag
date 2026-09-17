@@ -18,6 +18,18 @@ if TYPE_CHECKING:
 TAG_STATUS_SAFE = "safe"
 TAG_STATUS_LOST = "lost"
 
+# How the owner's name is released once a bag is reported lost.
+#
+# A scan token is a bearer credential with no expiry: someone who scans a bag
+# while it is safe learns nothing, but can save the URL and poll it. The moment
+# the owner reports the bag lost, `always` hands that watcher the name. The
+# finder never needed it — the relay works without it — so `on_reply` releases
+# it into one conversation, to someone who has said they are holding the bag.
+NAME_ALWAYS = "always"
+NAME_ON_REPLY = "on_reply"
+NAME_NEVER = "never"
+NAME_DISCLOSURE = (NAME_ALWAYS, NAME_ON_REPLY, NAME_NEVER)
+
 
 class Tag(Base):
     """One physical tag.
@@ -31,6 +43,9 @@ class Tag(Base):
     __tablename__ = "tags"
     __table_args__ = (
         CheckConstraint("status IN ('safe', 'lost')", name="status_valid"),
+        CheckConstraint(
+            "name_disclosure IN ('always', 'on_reply', 'never')", name="name_disclosure_valid"
+        ),
         Index("ix_tags_user_created", "user_id", "created_at"),
     )
 
@@ -66,14 +81,34 @@ class Tag(Base):
     icon: Mapped[str | None] = mapped_column(String(24))
     icon_color: Mapped[str | None] = mapped_column(String(16))
 
-    # What a finder may see once the tag is marked lost. Off by default; the
-    # owner opts in field by field. The address is never exposed at all.
-    reveal_name: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # What a finder may see once the tag is marked lost. The address is never
+    # exposed at all, at any setting.
+    name_disclosure: Mapped[str] = mapped_column(String(16), nullable=False, default=NAME_ON_REPLY)
     reveal_message_relay: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     notify_on_scan: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Two different counts, and the gap between them is the point.
+    #
+    # `scan_count` counts visits where the page actually rendered and said so.
+    # `page_fetch_count` counts every read of the scan endpoint, including the
+    # ones no browser was behind. A bag looked at on a carousel moves both. A
+    # saved URL on a polling loop moves only the second, which is what makes
+    # automated watching visible without identifying anyone.
     scan_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    page_fetch_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_scan_at: Mapped[dt.datetime | None] = timestamp()
+
+    # Reads that arrived with a code this tag has since retired — either a
+    # saved link, or a tag whose printed code was never replaced.
+    stale_scan_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_stale_scan_at: Mapped[dt.datetime | None] = timestamp()
+
+    # The kill switch, for an owner who has reprinted and wants the old codes
+    # to stop resolving at all. Off by default: turning it on strands anyone
+    # still holding the old tag, which is the right trade only once the new one
+    # is actually in use.
+    block_retired_tokens: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_notified_at: Mapped[dt.datetime | None] = timestamp()
 
     created_at: Mapped[dt.datetime] = timestamp(default_now=True, nullable=False)
@@ -87,6 +122,9 @@ class Tag(Base):
     threads: Mapped[list[RelayThread]] = relationship(
         back_populates="tag", cascade="all, delete-orphan"
     )
+    retired_tokens: Mapped[list[RetiredToken]] = relationship(
+        back_populates="tag", cascade="all, delete-orphan"
+    )
 
     @property
     def is_lost(self) -> bool:
@@ -95,6 +133,39 @@ class Tag(Base):
     @property
     def is_active(self) -> bool:
         return self.revoked_at is None
+
+
+class RetiredToken(Base):
+    """A scan code this tag used to answer to.
+
+    Rotating used to make the old code simply stop existing, which had two
+    problems. It threw away the most useful thing about it — that anyone
+    presenting it is holding a link rather than the bag. And it made rotation
+    expensive: the printed tag and the NFC sticker both carry the old code, so
+    cutting it off meant reprinting and rewriting before anyone could use the
+    bag's tag again.
+
+    So a retired code still resolves, in a reduced mode: the finder is told the
+    bag is lost and can message the owner, but the name is never released,
+    whatever the tag's setting says. A bag still comes home on an un-reprinted
+    tag; a watcher polling a saved URL gains nothing at the moment the owner
+    flips the switch. That is what makes rotation something an owner can do
+    freely rather than something they put off.
+
+    Rows are kept for as long as the tag exists, because the tag they were
+    printed on may never be reprinted. Only the hash is stored.
+    """
+
+    __tablename__ = "retired_tokens"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tags.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[bytes] = digest(unique=True)
+    retired_at: Mapped[dt.datetime] = timestamp(default_now=True, nullable=False)
+
+    tag: Mapped[Tag] = relationship(back_populates="retired_tokens")
 
 
 class ScanEvent(Base):

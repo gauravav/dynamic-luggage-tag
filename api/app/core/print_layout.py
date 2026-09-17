@@ -218,16 +218,19 @@ def _apply_boxes(pdf: canvas.Canvas) -> None:
 def front_layout(*, accent_band: bool) -> dict:
     """Where everything on the front face goes, in millimetres.
 
-    Origin at the bottom-left of the bleed, y upward. Laid out from the bottom
-    up: the QR block and the name plate are fixed commitments — a shrunken
-    symbol will not scan and a clipped name defeats the tag — so they claim
-    their space first.
+    Origin at the bottom-left of the bleed, y upward.
 
-    The motif is no longer one of the things competing for that space. It
-    covers the entire tag, and everything readable sits on ``panel``, a plate
-    of plain field colour laid over it. The strap hole gets a smaller plate of
-    its own. Between them the pattern runs edge to edge, which is what makes a
-    bag recognisable from the far end of a carousel.
+    The plate at the bottom holds two columns side by side: the QR symbol on
+    the left, and the name, subtitle and bag icon stacked to the right of it.
+    Stacking them instead — symbol under name — made the plate half the height
+    of the tag and left the motif a strip along the top. The motif is what
+    someone recognises a bag by from the far end of a carousel, so it gets the
+    room, and the plate takes only what has to be read close up.
+
+    Nothing on this face explains what the code is for. The back has room to
+    say it properly, and a line of instructions here would cost the pattern
+    another six millimetres to tell a finder what the page they are about to
+    open tells them anyway.
 
     A pure function so the browser preview (``web/src/lib/motif.ts``) can use
     the same numbers and put every plate exactly where print does.
@@ -237,25 +240,27 @@ def front_layout(*, accent_band: bool) -> dict:
     safe_x = BLEED_MARGIN_MM + SAFE_MARGIN_MM
     safe_y = safe_x
 
-    # The plate sits on the safety box; its own padding keeps type off its edge.
     content_x = safe_x + PANEL_PAD_MM
     content_w = SAFE_W_MM - PANEL_PAD_MM * 2.0
 
     panel_bottom = safe_y
     footnote_y = panel_bottom + 3.0
-    qr_side = min(content_w * 0.42, 24.0)
+
+    # Left column: the symbol. 22 mm still leaves every module well above the
+    # size a phone camera needs, and buys the right column four more.
+    qr_side = 22.0
     qr = (content_x, footnote_y + 3.5, qr_side, qr_side)
+    columns_top = qr[1] + qr_side
 
-    subtitle_baseline = qr[1] + qr_side + 5.0
-    name_baseline = subtitle_baseline + 7.5
+    # Right column: icon at the top, then the name, then the subtitle.
+    text_x = qr[0] + qr_side + 4.0
+    text_w = content_x + content_w - text_x
+    icon_size = 9.5
+    icon = (text_x, columns_top - icon_size, icon_size, icon_size)
+    name_baseline = icon[1] - 4.0
+    subtitle_baseline = name_baseline - 6.5
 
-    # The icon stands beside the name and subtitle together, so it reads as the
-    # bag those two lines describe rather than as decoration on one of them.
-    icon_size = 13.0
-    icon = (content_x, subtitle_baseline - 1.0, icon_size, icon_size)
-    name_indent = icon_size + 3.0
-
-    band_top = icon[1] + icon_size + 3.0
+    band_top = columns_top + 3.0
     band_height = 3.2 if accent_band else 0.0
     panel_top = band_top + band_height + 3.0
 
@@ -266,8 +271,8 @@ def front_layout(*, accent_band: bool) -> dict:
         "subtitle_baseline": subtitle_baseline,
         "name_baseline": name_baseline,
         "icon": icon,
-        # Added to the content x when an icon is drawn, so the type clears it.
-        "name_indent": name_indent,
+        # The column the type sits in, beside the symbol rather than under it.
+        "text": (text_x, text_w),
         "band": (content_x, band_top, content_w, band_height),
         "panel": (safe_x, panel_bottom, SAFE_W_MM, panel_top - panel_bottom),
         "panel_radius": PANEL_RADIUS_MM,
@@ -323,7 +328,7 @@ def back_layout() -> dict:
 
 
 def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
-    """Front face: motif over the whole tag, name plate and QR symbol on top."""
+    """Front face: motif over the whole tag, with the plate beneath it."""
     _apply_boxes(pdf)
     design = face.design
     ink = HexColor(design.ink)
@@ -341,10 +346,9 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
     _draw_plate(pdf, Box(*(value * mm for value in layout["panel"])), design)
 
     content_x, content_w = (value * mm for value in layout["content"])
+    text_x, text_w = (value * mm for value in layout["text"])
     footnote_y = layout["footnote_y"] * mm
     qr_box = Box(*(value * mm for value in layout["qr"]))
-    subtitle_baseline = layout["subtitle_baseline"] * mm
-    name_baseline = layout["name_baseline"] * mm
     band_top = layout["band"][1] * mm
     band_height = layout["band"][3] * mm
 
@@ -352,21 +356,20 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
         pdf.setFillColor(HexColor(design.accent))
         pdf.rect(content_x, band_top, content_w, band_height, stroke=0, fill=1)
 
-    text_x, text_w = content_x, content_w
+    _draw_qr(pdf, qr_box, face.scan_url, ink)
+
     if face.icon:
         _draw_icon(pdf, Box(*(value * mm for value in layout["icon"])), face, design)
-        text_x += layout["name_indent"] * mm
-        text_w -= layout["name_indent"] * mm
 
     if face.display_name:
         _draw_fitted(
             pdf,
             face.display_name,
             font=FONT_BOLD,
-            max_size=16,
-            min_size=9,
+            max_size=14,
+            min_size=8,
             x=text_x,
-            y=name_baseline,
+            y=layout["name_baseline"] * mm,
             max_width=text_w,
             color=ink,
         )
@@ -375,27 +378,13 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
             pdf,
             face.subtitle,
             font=FONT_REGULAR,
-            max_size=8.5,
-            min_size=6.5,
+            max_size=8,
+            min_size=6,
             x=text_x,
-            y=subtitle_baseline,
+            y=layout["subtitle_baseline"] * mm,
             max_width=text_w,
             color=muted,
         )
-
-    _draw_qr(pdf, qr_box, face.scan_url, ink)
-
-    _draw_wrapped(
-        pdf,
-        face.instruction,
-        font=FONT_REGULAR,
-        size=7.4,
-        leading=9.4,
-        x=qr_box.right + 4 * mm,
-        top=qr_box.top - 2.5 * mm,
-        max_width=content_x + content_w - qr_box.right - 4 * mm,
-        color=muted,
-    )
 
     pdf.setFillColor(muted)
     pdf.setFont(FONT_REGULAR, 5.4)

@@ -175,7 +175,7 @@
   </p>
   <dl class="meta">
     <div><dt>subject</dt><dd>Dynamic Luggage Tag</dd></div>
-    <div><dt>revision</dt><dd><code>5de265a</code></dd></div>
+    <div><dt>revision</dt><dd><code>2518f29</code>+</dd></div>
     <div><dt>date</dt><dd>17 September 2026</dd></div>
     <div><dt>findings</dt><dd>0 high · 2 medium · 5 low · 2 informational</dd></div>
   </dl>
@@ -250,6 +250,11 @@
         <td><strong>Someone who photographs a tag</strong></td>
         <td>To track the bag, or reach the owner later</td>
         <td>The QR carries a random 256-bit token and nothing else; the owner can rotate it</td>
+      </tr>
+      <tr>
+        <td><strong>Someone who keeps the link</strong></td>
+        <td>To be told when the owner is away and has lost a bag, and to be handed their name at that moment</td>
+        <td>The name is released per conversation, not published to whoever holds a code; retired codes never release it at all</td>
       </tr>
       <tr>
         <td><strong>Whoever obtains a database dump</strong></td>
@@ -625,9 +630,80 @@ cache-control: no-store, private</code></pre>
     printed QR code and cannot be designed away. It is mitigated rather than
     solved: the token is 256 random bits, it identifies a row and nothing else,
     <code>Referrer-Policy: no-referrer</code> keeps it out of onward requests,
-    the page is <code>noindex</code>, and the owner can rotate the code —
-    invalidating every printed copy and closing open conversations.
+    and the page is <code>noindex</code>.
   </p>
+
+  <h3>The watcher who waits</h3>
+  <p>
+    The sharpest consequence of a token with no expiry is not that it can be
+    photographed — it is that it can be <em>kept</em>. Someone who handles a
+    bag for a moment, a porter or a neighbour on a carousel, can scan it while
+    it is marked safe, learn nothing at the time, and save the URL. Polling it
+    costs nothing. When the owner reports the bag lost, that watcher is handed
+    the owner's name and told, in effect, that this person is away from home
+    and has just lost a bag.
+  </p>
+  <div class="note warn">
+    <strong>Why "detect the watcher" is the wrong instinct.</strong> The
+    obvious answer is to remember who scanned and flag them when they return.
+    It does not work, for a reason worth stating: the good samaritan who scans
+    a bag, walks away, and checks back an hour later to see whether the owner
+    replied produces <em>exactly</em> the same signal as a bot. Any rule sharp
+    enough to catch the watcher lands on the person trying to return the bag.
+    (And the identifiers such a rule would need are not available: a MAC
+    address never leaves the local network segment, and an IP address is shared
+    by every traveller on the airport's wifi.)
+  </div>
+  <p>
+    So the defence is not to identify the watcher but to make the moment
+    worthless. A finder does not need the owner's name to return a bag — they
+    need a channel, and the relay already provides one without ever showing the
+    owner's name. The name is therefore released per conversation rather than
+    published to whoever presents a code:
+  </p>
+  <span class="src">api/app/api/scan.py</span>
+<pre><code><span class="c"># `always` is the only setting that puts a name in front of whoever</span>
+<span class="c"># presents a code. `on_reply` holds it back until the owner answers a</span>
+<span class="c"># specific person in the relay, which is the setting that makes a saved</span>
+<span class="c"># URL worthless to someone who is not holding the bag.</span>
+<span class="c">#</span>
+<span class="c"># A retired code never gets the name, at any setting: it cannot be told</span>
+<span class="c"># apart from a link saved before the bag was ever reported lost.</span>
+if tag.name_disclosure == NAME_ALWAYS and not retired:</code></pre>
+  <p>
+    A bot polling a saved URL now sees that the bag is reported lost and a
+    message form. That is all it ever sees.
+  </p>
+
+  <h4>Rotation that costs nothing</h4>
+  <p>
+    Rotating a code used to invalidate it outright, which made rotation
+    something owners put off: the code is printed on the tag and written into
+    an NFC sticker, and killing it strands the bag until both are redone. So a
+    retired code is now kept and goes on resolving in a reduced mode — the
+    finder is told the bag is lost and can message the owner, but no name is
+    released, whatever the setting says. A bag on an un-reprinted tag still
+    comes home; a watcher's saved copy is permanently demoted. An owner who has
+    reprinted can switch the old codes off entirely.
+  </p>
+
+  <h4>Watching is visible without identifying anyone</h4>
+  <p>
+    Two counters, neither of which describes a caller. Every read of the scan
+    endpoint increments <code>page_fetch_count</code>; only a browser that
+    rendered the page and said so increments <code>scan_count</code>. A script
+    on a timer moves the first and not the second. Separately, a read carrying
+    a code the tag has already replaced is counted on its own — nobody holding
+    the printed tag can produce one.
+  </p>
+  <figure>
+    <img src="screenshots/sec-watched.png" alt="A notice on the tag page reporting reads that never rendered and reads using a replaced code">
+    <figcaption>
+      The owner's view. It reports what was counted and what it would mean,
+      and stops short of accusing anyone — a link preview and a security
+      scanner produce the same numbers.
+    </figcaption>
+  </figure>
 </section>
 
 <section id="privacy">

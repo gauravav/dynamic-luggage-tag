@@ -12,7 +12,7 @@ from ..core import design as design_module
 from ..core import icons, print_layout, qr
 from ..errors import ApiError
 from ..extensions import app_config, db_session, limiter
-from ..models import TAG_STATUS_LOST, TAG_STATUS_SAFE, Tag, utcnow
+from ..models import TAG_STATUS_LOST, TAG_STATUS_SAFE, RetiredToken, Tag, utcnow
 from ..schemas import NfcBindIn, NfcChipIn, TagCreateIn, TagTokenIn, TagUpdateIn, parse
 from ..security import audit
 from ..security.authz import login_required, owned_tag, require_user, user_crypto
@@ -22,6 +22,28 @@ from ..security.pii import UserCrypto
 bp = Blueprint("tags", __name__, url_prefix="/tags")
 
 MAX_TAGS_PER_USER = 25
+
+# How many reads that never rendered it takes before a tag is called watched.
+# A real bag picks up a handful of curious looks and the odd link preview; a
+# saved URL on a timer produces hundreds, and it is the gap between the two
+# counts rather than either on its own that separates them.
+UNRENDERED_READS_BEFORE_WATCHED = 20
+# Reads with a code the tag has replaced. Lower, because this one is not
+# ambiguous in the same way — nobody generates a retired code by accident.
+STALE_READS_BEFORE_WATCHED = 3
+
+
+def _looks_watched(tag: Tag) -> bool:
+    """Whether this tag shows signs of being polled rather than scanned.
+
+    Deliberately a rule the owner can be told in one sentence, not a score. It
+    is a prompt to go and look, and the page says exactly what it counted.
+    """
+    unrendered = max(0, tag.page_fetch_count - tag.scan_count)
+    return (
+        unrendered >= UNRENDERED_READS_BEFORE_WATCHED
+        or tag.stale_scan_count >= STALE_READS_BEFORE_WATCHED
+    )
 
 
 def _scan_url(token: str) -> str:
@@ -37,11 +59,22 @@ def _serialize(tag: Tag, crypto: UserCrypto, *, include_token: bool = False) -> 
         "design": tag.design,
         "icon": tag.icon,
         "icon_color": tag.icon_color,
-        "reveal_name": tag.reveal_name,
+        "name_disclosure": tag.name_disclosure,
         "reveal_message_relay": tag.reveal_message_relay,
         "notify_on_scan": tag.notify_on_scan,
         "scan_count": tag.scan_count,
         "last_scan_at": tag.last_scan_at.isoformat() if tag.last_scan_at else None,
+        # What automated watching looks like from here: reads that never
+        # became a rendered visit, and reads carrying a code this tag has
+        # since replaced.
+        "page_fetch_count": tag.page_fetch_count,
+        "stale_scan_count": tag.stale_scan_count,
+        "last_stale_scan_at": (
+            tag.last_stale_scan_at.isoformat() if tag.last_stale_scan_at else None
+        ),
+        "block_retired_tokens": tag.block_retired_tokens,
+        "retired_code_count": len(tag.retired_tokens),
+        "watched": _looks_watched(tag),
         "created_at": tag.created_at.isoformat(),
         "nfc_linked": tag.nfc_uid_bidx is not None,
         "nfc_linked_at": tag.nfc_bound_at.isoformat() if tag.nfc_bound_at else None,
@@ -146,10 +179,13 @@ def update_tag(tag_id: str):
     if "icon_color" in payload.model_fields_set:
         tag.icon_color = payload.icon_color
 
-    for flag in ("reveal_name", "reveal_message_relay", "notify_on_scan"):
+    for flag in ("reveal_message_relay", "notify_on_scan", "block_retired_tokens"):
         value = getattr(payload, flag)
         if value is not None:
             setattr(tag, flag, value)
+
+    if payload.name_disclosure is not None:
+        tag.name_disclosure = payload.name_disclosure
 
     if payload.status is not None and payload.status != tag.status:
         if payload.status == TAG_STATUS_LOST and user.email_verified_at is None:
@@ -198,6 +234,19 @@ def rotate_token(tag_id: str):
     crypto = user_crypto()
     db = db_session()
     config = app_config()
+
+    # Keep the outgoing code rather than discarding it. The bag is carrying it
+    # printed on one side and written into an NFC sticker on the other, and
+    # neither is reprinted by this request — so it goes on resolving, in a mode
+    # that gets a bag home without releasing a name. See models/tag.py.
+    db.add(
+        RetiredToken(
+            id=uuid.uuid4(),
+            tag_id=tag.id,
+            token_hash=tag.token_hash,
+            retired_at=utcnow(),
+        )
+    )
 
     token = new_token(32)
     tag.token_hash = hash_token(config.token_pepper, "tag", token)

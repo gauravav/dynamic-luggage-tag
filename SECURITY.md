@@ -101,8 +101,12 @@ Treat both as permanent for a deployment.
 ## Known limitations
 
 - Scan tokens are bearer credentials. Anyone who photographs a tag can open its
-  page; that is inherent to a printed QR code. Rotate the code if a tag is
-  compromised — `Issue a new code` on the tag page.
+  page; that is inherent to a printed QR code. What it no longer buys them is
+  waiting: the owner's name is released into a conversation they have answered
+  rather than published to whoever presents a code, so a link saved while the
+  bag was safe shows only that the bag is now lost. Rotating a code demotes
+  every saved copy permanently, and does not require reprinting the tag —
+  retired codes keep working in that reduced mode so a bag still comes home.
 - The default `header` geolocation provider trusts headers set by an edge
   proxy. It is only safe when something upstream strips those headers from
   client requests.

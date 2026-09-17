@@ -97,16 +97,14 @@ function FrontFace({
   const layout = frontLayout(design.accent_band)
   const ink = design.ink
   const mutedInk = rgbToCss(muted(hexToRgb(design.ink)))
-  const [contentX, contentW] = layout.content
+  const [contentX] = layout.content
   const [, panelY, , panelH] = layout.panel
+  const [textX, textW] = layout.text
 
   // Cropping for the crest stops just above the name plate, so what is left is
   // pattern and the punch — the part you recognise across a baggage hall.
   const panelTopFromTop = BLEED_H_MM - (panelY + panelH)
   const viewHeight = crest ? panelTopFromTop : BLEED_H_MM
-
-  const textX = icon ? contentX + layout.name_indent : contentX
-  const textW = icon ? contentW - layout.name_indent : contentW
 
   return (
     <Face
@@ -129,6 +127,15 @@ function FrontFace({
             />
           )}
 
+          {showCode && (
+            <CodeBlock
+              color={ink}
+              x={layout.qr[0]}
+              y={flipY(layout.qr[1] + layout.qr[3])}
+              size={layout.qr[2]}
+            />
+          )}
+
           {icon && (
             <BagIcon rect={layout.icon} icon={icon} color={iconColour(iconColor)} design={design} />
           )}
@@ -138,8 +145,8 @@ function FrontFace({
               text={name}
               x={textX}
               y={flipY(layout.name_baseline)}
-              maxPt={16}
-              minPt={9}
+              maxPt={14}
+              minPt={8}
               maxWidth={textW}
               fill={ink}
               weight={700}
@@ -150,32 +157,13 @@ function FrontFace({
               text={subtitle}
               x={textX}
               y={flipY(layout.subtitle_baseline)}
-              maxPt={8.5}
-              minPt={6.5}
+              maxPt={8}
+              minPt={6}
               maxWidth={textW}
               fill={mutedInk}
               weight={400}
             />
           )}
-
-          {showCode && (
-            <CodeBlock
-              color={ink}
-              x={layout.qr[0]}
-              y={flipY(layout.qr[1] + layout.qr[3])}
-              size={layout.qr[2]}
-            />
-          )}
-
-          <WrappedText
-            text="Found this bag? Scan the code."
-            x={layout.qr[0] + layout.qr[2] + 4}
-            top={flipY(layout.qr[1] + layout.qr[3]) + 2.5}
-            sizePt={7.4}
-            leadingPt={9.4}
-            maxWidth={contentX + contentW - (layout.qr[0] + layout.qr[2]) - 4}
-            fill={mutedInk}
-          />
 
           <text
             x={contentX}

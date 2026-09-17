@@ -14,7 +14,8 @@ Encrypted, privacy-first digital luggage tags. Every traveler gets one unique vi
 - The pattern covers the whole tag, so a bag is recognisable down the length of a carousel
 - Each tag can carry a bag icon — suitcase, carry-on, duffel, backpack and so on — in a colour of its own
 - Public scan page — no login required for the person who finds a bag
-- Owner controls disclosure: contact info is hidden until the bag is reported **Lost**
+- Owner controls disclosure: nothing personal is shown until the bag is reported **Lost**, and
+  even then the name is released into one conversation rather than published to whoever holds the link
 - One-time, city-level location capture on scan (opt-in for the finder)
 - Owner gets notified by email/push whenever their tag is scanned
 - Masked contact relay — finders can message the owner without ever seeing a raw phone number or email
@@ -29,7 +30,9 @@ Standard luggage tags force a bad trade-off: either they're blank and useless fo
 1. **Sign up** — enter your name, phone, email (address stays internal, used only for shipping physical tags if ordered)
 2. **Get your design** — a unique pattern and QR code, generated once, reused across every bag you own
 3. **Someone scans it** — they land on a public status page; if you haven't reported the bag lost, they see nothing personal
-4. **You decide** — flip the bag to "Lost" in the app, and the scan page now shows your name and a masked contact option
+4. **You decide** — flip the bag to "Lost" in the app, and a finder can message you. Reply, and
+   your name is released to that conversation. Someone who saved the link earlier and has been
+   waiting for the status to change gets no more than "this bag is reported lost"
 
 ## Self-hosted vs. managed
 
@@ -104,6 +107,8 @@ setting it swinging.
 - Every account has its own data key; personal fields are AES-256-GCM sealed with it,
   and the data key is itself sealed by a key held only in the environment
 - Each ciphertext is bound to its own row and column, so one cannot be moved and decrypted
+- A saved scan link is worth nothing later: the name is released per conversation, and a replaced
+  code never releases it at all — so rotating a code costs nothing and does not need a reprint
 - Deleting an account destroys that key, so anything left in a backup can never be read
 - The address is never shown to a finder, at any setting
 - Scanner IP addresses are never stored — only a day-salted hash of a truncated subnet

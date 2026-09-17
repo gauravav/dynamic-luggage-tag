@@ -218,7 +218,7 @@ export interface FrontLayout {
   subtitle_baseline: number
   name_baseline: number
   icon: Rect
-  name_indent: number
+  text: [x: number, width: number]
   band: Rect
   panel: Rect
   panel_radius: number
@@ -252,17 +252,19 @@ export function frontLayout(accentBand: boolean): FrontLayout {
 
   const panelBottom = safeY
   const footnoteY = panelBottom + 3.0
-  const qrSide = Math.min(contentW * 0.42, 24.0)
+
+  const qrSide = 22.0
   const qr: Rect = [contentX, footnoteY + 3.5, qrSide, qrSide]
+  const columnsTop = qr[1] + qrSide
 
-  const subtitleBaseline = qr[1] + qrSide + 5.0
-  const nameBaseline = subtitleBaseline + 7.5
+  const textX = qr[0] + qrSide + 4.0
+  const textW = contentX + contentW - textX
+  const iconSize = 9.5
+  const icon: Rect = [textX, columnsTop - iconSize, iconSize, iconSize]
+  const nameBaseline = icon[1] - 4.0
+  const subtitleBaseline = nameBaseline - 6.5
 
-  const iconSize = 13.0
-  const icon: Rect = [contentX, subtitleBaseline - 1.0, iconSize, iconSize]
-  const nameIndent = iconSize + 3.0
-
-  const bandTop = icon[1] + iconSize + 3.0
+  const bandTop = columnsTop + 3.0
   const bandHeight = accentBand ? 3.2 : 0.0
   const panelTop = bandTop + bandHeight + 3.0
 
@@ -273,7 +275,7 @@ export function frontLayout(accentBand: boolean): FrontLayout {
     subtitle_baseline: subtitleBaseline,
     name_baseline: nameBaseline,
     icon,
-    name_indent: nameIndent,
+    text: [textX, textW],
     band: [contentX, bandTop, contentW, bandHeight],
     panel: [safeX, panelBottom, SAFE_W_MM, panelTop - panelBottom],
     panel_radius: PANEL_RADIUS_MM,
