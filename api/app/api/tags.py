@@ -9,11 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from ..core import design as design_module
-from ..core import print_layout, qr
+from ..core import icons, print_layout, qr
 from ..errors import ApiError
 from ..extensions import app_config, db_session, limiter
 from ..models import TAG_STATUS_LOST, TAG_STATUS_SAFE, Tag, utcnow
-from ..schemas import NfcBindIn, NfcChipIn, TagCreateIn, TagUpdateIn, parse
+from ..schemas import NfcBindIn, NfcChipIn, TagCreateIn, TagTokenIn, TagUpdateIn, parse
 from ..security import audit
 from ..security.authz import login_required, owned_tag, require_user, user_crypto
 from ..security.crypto import blind_index, hash_token, new_token
@@ -35,6 +35,8 @@ def _serialize(tag: Tag, crypto: UserCrypto, *, include_token: bool = False) -> 
         "status": tag.status,
         "lost_at": tag.lost_at.isoformat() if tag.lost_at else None,
         "design": tag.design,
+        "icon": tag.icon,
+        "icon_color": tag.icon_color,
         "reveal_name": tag.reveal_name,
         "reveal_message_relay": tag.reveal_message_relay,
         "notify_on_scan": tag.notify_on_scan,
@@ -99,6 +101,8 @@ def create_tag():
     )
     crypto.write_tag(tag, "token", token)
     crypto.write_tag(tag, "label", payload.label)
+    tag.icon = payload.icon
+    tag.icon_color = payload.icon_color or (icons.DEFAULT_ICON_COLOR if payload.icon else None)
     db.add(tag)
 
     audit.record(
@@ -133,6 +137,14 @@ def update_tag(tag_id: str):
 
     if "label" in payload.model_fields_set:
         crypto.write_tag(tag, "label", payload.label or None)
+
+    if "icon" in payload.model_fields_set:
+        tag.icon = payload.icon
+        # An icon with no colour behind it would print as nothing at all.
+        if tag.icon and not tag.icon_color:
+            tag.icon_color = icons.DEFAULT_ICON_COLOR
+    if "icon_color" in payload.model_fields_set:
+        tag.icon_color = payload.icon_color
 
     for flag in ("reveal_name", "reveal_message_relay", "notify_on_scan"):
         value = getattr(payload, flag)
@@ -317,6 +329,32 @@ def unbind_nfc(tag_id: str):
     return jsonify({"tag": _serialize(tag, user_crypto(), include_token=True)})
 
 
+@bp.post("/lookup")
+@login_required
+@limiter.limit("120 per hour")
+def lookup_token():
+    """Answers "is this scanned tag one of mine?" for the signed-in owner.
+
+    This is what lets a scan land on the owner's own tag page instead of the
+    finder's view when they tap their own bag. A token belonging to somebody
+    else is a plain 404: the caller learns nothing they did not already have.
+    """
+    payload = parse(request, TagTokenIn)
+    user = require_user()
+    config = app_config()
+
+    tag = db_session().scalar(
+        select(Tag).where(
+            Tag.token_hash == hash_token(config.token_pepper, "tag", payload.token),
+            Tag.user_id == user.id,
+            Tag.revoked_at.is_(None),
+        )
+    )
+    if tag is None:
+        raise ApiError("not_found", "No such tag.", status=404)
+    return jsonify({"tag": _serialize(tag, user_crypto(), include_token=True)})
+
+
 @bp.post("/nfc/lookup")
 @login_required
 @limiter.limit("60 per hour")
@@ -433,6 +471,8 @@ def tag_pdf(tag_id: str):
         # picks the bag up, unlike everything behind the scan page.
         display_name=name,
         subtitle=label,
+        icon=tag.icon,
+        icon_color=tag.icon_color,
     )
     pdf = print_layout.render(face, include_back=include_back, guides=guides)
 

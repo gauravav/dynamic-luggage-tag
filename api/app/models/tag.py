@@ -59,6 +59,13 @@ class Tag(Base):
     # Rendering parameters only: palette name, motif, rotation. No personal data.
     design: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
+    # The bag this tag is tied to, as a pictogram. Both values come from the
+    # fixed lists in core/icons.py, so neither is free text: an icon name is
+    # drawn into a PDF, and a colour the owner cannot see against their own
+    # field colour is an icon that does not help them find the bag.
+    icon: Mapped[str | None] = mapped_column(String(24))
+    icon_color: Mapped[str | None] = mapped_column(String(16))
+
     # What a finder may see once the tag is marked lost. Off by default; the
     # owner opts in field by field. The address is never exposed at all.
     reveal_name: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

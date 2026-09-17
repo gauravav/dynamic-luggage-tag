@@ -22,6 +22,19 @@ _API_CSP = (
     "sandbox"
 )
 
+# The same policy for the responses a browser is *meant* to open or save: the
+# print PDF and the QR symbol.
+#
+# A bare `sandbox` puts the response in an opaque origin with every sandbox
+# flag set, and one of those flags is the one that permits downloads — so
+# Chrome refuses to save the PDF at all, and renders neither it nor the SVG.
+# `allow-downloads` restores exactly that one capability and nothing else;
+# script, forms, plugins and same-origin access all stay denied.
+_ASSET_CSP = _API_CSP.replace("sandbox", "sandbox allow-downloads")
+
+# Content types served for the browser to open or save rather than parse.
+_ASSET_TYPES = ("application/pdf", "image/svg+xml", "image/png")
+
 _PERMISSIONS_POLICY = (
     "accelerometer=(), autoplay=(), camera=(), display-capture=(), "
     "encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), "
@@ -38,7 +51,9 @@ def register_security_headers(app: Flask, config: Config) -> None:
 
     @app.after_request
     def _apply(response: Response) -> Response:
-        response.headers.setdefault("Content-Security-Policy", _API_CSP)
+        content_type = (response.headers.get("Content-Type") or "").split(";")[0].strip()
+        policy = _ASSET_CSP if content_type in _ASSET_TYPES else _API_CSP
+        response.headers.setdefault("Content-Security-Policy", policy)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")

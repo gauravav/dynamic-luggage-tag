@@ -19,6 +19,7 @@ from typing import Any, TypeVar
 from flask import Request
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError, field_validator
 
+from ..core.icons import ICON_COLORS, ICON_NAMES
 from ..errors import ApiError
 
 T = TypeVar("T", bound=BaseModel)
@@ -161,11 +162,41 @@ class AccountDeleteIn(Payload):
 # --------------------------------------------------------------------------
 
 
-class TagCreateIn(Payload):
+class TagAppearance(Payload):
+    """The bag icon and its colour, shared by the create and update payloads.
+
+    Both are names from the fixed lists in ``core/icons.py`` rather than free
+    text or a hex colour: the icon name is drawn into a PDF, and an arbitrary
+    colour would let someone pick one invisible against their own field.
+    """
+
+    icon: str | None = Field(default=None, max_length=24)
+    icon_color: str | None = Field(default=None, max_length=16)
+
+    @field_validator("icon")
+    @classmethod
+    def _known_icon(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        if value not in ICON_NAMES:
+            raise ValueError("Pick one of the offered bag icons.")
+        return value
+
+    @field_validator("icon_color")
+    @classmethod
+    def _known_icon_color(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        if value not in ICON_COLORS:
+            raise ValueError("Pick one of the offered icon colours.")
+        return value
+
+
+class TagCreateIn(TagAppearance):
     label: str | None = Field(default=None, max_length=80)
 
 
-class TagUpdateIn(Payload):
+class TagUpdateIn(TagAppearance):
     label: str | None = Field(default=None, max_length=80)
     status: str | None = Field(default=None, max_length=8)
     reveal_name: bool | None = None
@@ -180,6 +211,16 @@ class TagUpdateIn(Payload):
         if value not in {"safe", "lost"}:
             raise ValueError("Status must be 'safe' or 'lost'.")
         return value
+
+
+class TagTokenIn(Payload):
+    """A scan token an owner is asking us to match against their own tags.
+
+    Sent in a body rather than a path so the token never lands in an access log
+    or a browser history entry on the way to finding out whose bag it is.
+    """
+
+    token: str = Field(min_length=1, max_length=128)
 
 
 class NfcChipIn(Payload):

@@ -50,6 +50,10 @@ export const SAFE_MARGIN_MM = (TRIM_W_MM - SAFE_W_MM) / 2
 export const HOLE_ZONE_MM = 16
 export const HOLE_DIAMETER_MM = 5.5
 export const HOLE_CENTRE_FROM_TRIM_TOP_MM = 8.5
+export const HOLE_PLATE_PAD_MM = 3.0
+export const PANEL_PAD_MM = 3.5
+export const PANEL_RADIUS_MM = 3.0
+export const NFC_DISC_DIAMETER_MM = 25.0
 
 const BACKGROUND_TINT = 0.12
 
@@ -207,15 +211,35 @@ function diagonalLines(
 }
 
 export type Rect = [x: number, y: number, width: number, height: number]
+export type Disc = [cx: number, cy: number, r: number]
 
 export interface FrontLayout {
   footnote_y: number
   qr: Rect
   subtitle_baseline: number
   name_baseline: number
+  icon: Rect
+  name_indent: number
   band: Rect
-  rule_y: number
-  rule: [x1: number, x2: number]
+  panel: Rect
+  panel_radius: number
+  content: [x: number, width: number]
+  hole: Disc
+  pattern: Rect
+}
+
+export interface BackLayout {
+  nfc: Disc
+  nfc_kicker_baseline: number
+  nfc_label_baseline: number
+  panel: Rect
+  panel_radius: number
+  content: [x: number, width: number]
+  heading_baseline: number
+  body_floor: number
+  qr: Rect
+  footer_baseline: number
+  hole: Disc
   pattern: Rect
 }
 
@@ -224,26 +248,74 @@ export function frontLayout(accentBand: boolean): FrontLayout {
   const safeX = BLEED_MARGIN_MM + SAFE_MARGIN_MM
   const safeY = safeX
 
-  const footnoteY = safeY + 1.0
-  const qrSide = Math.min(SAFE_W_MM * 0.4, 26.0)
-  const qr: Rect = [safeX, footnoteY + 3.5, qrSide, qrSide]
+  const contentX = safeX + PANEL_PAD_MM
+  const contentW = SAFE_W_MM - PANEL_PAD_MM * 2
+
+  const panelBottom = safeY
+  const footnoteY = panelBottom + 3.0
+  const qrSide = Math.min(contentW * 0.42, 24.0)
+  const qr: Rect = [contentX, footnoteY + 3.5, qrSide, qrSide]
 
   const subtitleBaseline = qr[1] + qrSide + 5.0
   const nameBaseline = subtitleBaseline + 7.5
-  const bandTop = nameBaseline + 6.0
-  const bandHeight = accentBand ? 3.2 : 0.0
-  const ruleY = bandTop + bandHeight + 4.0
 
-  const patternBottom = ruleY + 3.5
-  const patternTop = BLEED_H_MM - HOLE_ZONE_MM
+  const iconSize = 13.0
+  const icon: Rect = [contentX, subtitleBaseline - 1.0, iconSize, iconSize]
+  const nameIndent = iconSize + 3.0
+
+  const bandTop = icon[1] + iconSize + 3.0
+  const bandHeight = accentBand ? 3.2 : 0.0
+  const panelTop = bandTop + bandHeight + 3.0
+
+  const holeCentreY = BLEED_H_MM - BLEED_MARGIN_MM - HOLE_CENTRE_FROM_TRIM_TOP_MM
   return {
     footnote_y: footnoteY,
     qr,
     subtitle_baseline: subtitleBaseline,
     name_baseline: nameBaseline,
-    band: [safeX, bandTop, SAFE_W_MM, bandHeight],
-    rule_y: ruleY,
-    rule: [safeX, safeX + SAFE_W_MM],
-    pattern: [0.0, patternBottom, BLEED_W_MM, patternTop - patternBottom],
+    icon,
+    name_indent: nameIndent,
+    band: [contentX, bandTop, contentW, bandHeight],
+    panel: [safeX, panelBottom, SAFE_W_MM, panelTop - panelBottom],
+    panel_radius: PANEL_RADIUS_MM,
+    content: [contentX, contentW],
+    hole: [BLEED_W_MM / 2, holeCentreY, HOLE_DIAMETER_MM / 2 + HOLE_PLATE_PAD_MM],
+    pattern: [0.0, 0.0, BLEED_W_MM, BLEED_H_MM],
+  }
+}
+
+/** print_layout.back_layout(). Keys match the Python dict for the parity test. */
+export function backLayout(): BackLayout {
+  const safeX = BLEED_MARGIN_MM + SAFE_MARGIN_MM
+  const safeY = safeX
+  const contentX = safeX + PANEL_PAD_MM
+  const contentW = SAFE_W_MM - PANEL_PAD_MM * 2
+
+  const nfcR = NFC_DISC_DIAMETER_MM / 2
+  const nfcCy = 76.0
+  const nfc: Disc = [BLEED_W_MM / 2, nfcCy, nfcR]
+
+  const panelBottom = safeY
+  const panelTop = 60.0
+  const footerBaseline = panelBottom + 2.5
+  const qrSide = 19.0
+  const qr: Rect = [BLEED_W_MM / 2 - qrSide / 2, footerBaseline + 4.0, qrSide, qrSide]
+  const bodyFloor = qr[1] + qrSide + 3.5
+  const headingBaseline = panelTop - 6.0
+
+  const holeCentreY = BLEED_H_MM - BLEED_MARGIN_MM - HOLE_CENTRE_FROM_TRIM_TOP_MM
+  return {
+    nfc,
+    nfc_kicker_baseline: nfcCy + 3.0,
+    nfc_label_baseline: nfcCy - 5.5,
+    panel: [safeX, panelBottom, SAFE_W_MM, panelTop - panelBottom],
+    panel_radius: PANEL_RADIUS_MM,
+    content: [contentX, contentW],
+    heading_baseline: headingBaseline,
+    body_floor: bodyFloor,
+    qr,
+    footer_baseline: footerBaseline,
+    hole: [BLEED_W_MM / 2, holeCentreY, HOLE_DIAMETER_MM / 2 + HOLE_PLATE_PAD_MM],
+    pattern: [0.0, 0.0, BLEED_W_MM, BLEED_H_MM],
   }
 }

@@ -1,4 +1,4 @@
-"""The browser preview and the printed tag must draw the same motif.
+"""The browser preview and the printed tag must draw the same tag.
 
 Runs the Python geometry (what the PDF prints) and the TypeScript port (what
 the browser shows) over a wide spread of designs and box sizes, and compares
@@ -18,8 +18,9 @@ from pathlib import Path
 import pytest
 
 from app.core import design as design_module
+from app.core import icons
 from app.core.motif import motif_shapes
-from app.core.print_layout import BLEED_W_MM, front_layout
+from app.core.print_layout import BLEED_W_MM, back_layout, front_layout
 
 SCRIPT = Path(__file__).resolve().parents[2] / "web" / "scripts" / "motif-parity.mjs"
 TOLERANCE = 1e-9
@@ -71,11 +72,14 @@ def _cases() -> list[dict]:
         seed = index.to_bytes(2, "big") * 8
         designs.append(design_module.generate(seed).to_dict())
 
-    # Every box the motif is actually drawn into.
+    # Every box the motif is actually drawn into. It now covers the whole tag
+    # on both faces, so there is one height — but the old band heights are kept
+    # as cases, because a design that renders wrong at an arbitrary box size
+    # would render wrong the next time the layout moves.
     heights = [
         front_layout(accent_band=False)["pattern"][3],
-        front_layout(accent_band=True)["pattern"][3],
-        12.0,  # back-face strip
+        57.0,
+        12.0,
     ]
     return [
         {"design": spec, "width": BLEED_W_MM, "height": height}
@@ -135,6 +139,18 @@ def test_front_layout_matches_across_languages():
     typescript = _run_typescript([])["layouts"]
     _assert_same(front_layout(accent_band=False), typescript["plain"], "layout(plain)")
     _assert_same(front_layout(accent_band=True), typescript["band"], "layout(band)")
+
+
+def test_back_layout_matches_across_languages():
+    typescript = _run_typescript([])["layouts"]
+    _assert_same(back_layout(), typescript["back"], "layout(back)")
+
+
+def test_icons_match_across_languages():
+    """An icon drawn from different coordinates is a different bag."""
+    typescript = _run_typescript([])
+    _assert_same(icons.ICONS, typescript["icons"], "icons")
+    _assert_same(icons.ICON_COLORS, typescript["iconColors"], "iconColors")
 
 
 def test_the_cases_cover_every_motif():

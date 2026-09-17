@@ -34,6 +34,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from . import icons
 from . import qr as qr_module
 from .design import Design
 from .motif import motif_shapes
@@ -57,6 +58,19 @@ HOLE_DIAMETER_MM = 5.50
 HOLE_CENTRE_FROM_TRIM_TOP_MM = 8.50
 # Plain field kept clear at the top so the punch does not land mid-motif.
 HOLE_ZONE_MM = 16.0
+# A disc of plain field behind the punch, so the motif stops short of the hole
+# rather than being cut through by it.
+HOLE_PLATE_PAD_MM = 3.0
+
+# The motif covers the whole tag: it is what the owner picks their bag out by
+# from twenty metres down a carousel, and a band of pattern at the top is not
+# enough to do that. Everything that has to be read instead sits on a plate of
+# plain field colour, and these are that plate's margins.
+PANEL_PAD_MM = 3.5
+PANEL_RADIUS_MM = 3.0
+
+# The round NFC sticker's landing zone on the back face (a 25 mm disc).
+NFC_DISC_DIAMETER_MM = 25.0
 
 PAGE_W = BLEED_W_MM * mm
 PAGE_H = BLEED_H_MM * mm
@@ -149,6 +163,10 @@ class TagFace:
     scan_url: str
     display_name: str | None = None
     subtitle: str | None = None
+    # The owner's bag icon and its colour, both chosen from fixed lists in
+    # ``core/icons.py``. None means no icon, and the name plate closes up.
+    icon: str | None = None
+    icon_color: str | None = None
     instruction: str = "Found this bag? Scan the code."
 
 
@@ -205,76 +223,142 @@ def front_layout(*, accent_band: bool) -> dict:
     Origin at the bottom-left of the bleed, y upward. Laid out from the bottom
     up: the QR block and the name plate are fixed commitments — a shrunken
     symbol will not scan and a clipped name defeats the tag — so they claim
-    their space first, and the motif takes whatever height is left.
+    their space first.
+
+    The motif is no longer one of the things competing for that space. It
+    covers the entire tag, and everything readable sits on ``panel``, a plate
+    of plain field colour laid over it. The strap hole gets a smaller plate of
+    its own. Between them the pattern runs edge to edge, which is what makes a
+    bag recognisable from the far end of a carousel.
 
     A pure function so the browser preview (``web/src/lib/motif.ts``) can use
-    the same numbers and put the motif band exactly where print does.
+    the same numbers and put every plate exactly where print does.
 
     Rectangles are ``(x, y, width, height)``.
     """
     safe_x = BLEED_MARGIN_MM + SAFE_MARGIN_MM
     safe_y = safe_x
 
-    footnote_y = safe_y + 1.0
-    qr_side = min(SAFE_W_MM * 0.40, 26.0)
-    qr = (safe_x, footnote_y + 3.5, qr_side, qr_side)
+    # The plate sits on the safety box; its own padding keeps type off its edge.
+    content_x = safe_x + PANEL_PAD_MM
+    content_w = SAFE_W_MM - PANEL_PAD_MM * 2.0
+
+    panel_bottom = safe_y
+    footnote_y = panel_bottom + 3.0
+    qr_side = min(content_w * 0.42, 24.0)
+    qr = (content_x, footnote_y + 3.5, qr_side, qr_side)
 
     subtitle_baseline = qr[1] + qr_side + 5.0
     name_baseline = subtitle_baseline + 7.5
-    band_top = name_baseline + 6.0
-    band_height = 3.2 if accent_band else 0.0
-    rule_y = band_top + band_height + 4.0
 
-    pattern_bottom = rule_y + 3.5
-    pattern_top = BLEED_H_MM - HOLE_ZONE_MM
+    # The icon stands beside the name and subtitle together, so it reads as the
+    # bag those two lines describe rather than as decoration on one of them.
+    icon_size = 13.0
+    icon = (content_x, subtitle_baseline - 1.0, icon_size, icon_size)
+    name_indent = icon_size + 3.0
+
+    band_top = icon[1] + icon_size + 3.0
+    band_height = 3.2 if accent_band else 0.0
+    panel_top = band_top + band_height + 3.0
+
+    hole_centre_y = BLEED_H_MM - BLEED_MARGIN_MM - HOLE_CENTRE_FROM_TRIM_TOP_MM
     return {
         "footnote_y": footnote_y,
         "qr": qr,
         "subtitle_baseline": subtitle_baseline,
         "name_baseline": name_baseline,
-        "band": (safe_x, band_top, SAFE_W_MM, band_height),
-        "rule_y": rule_y,
-        "rule": (safe_x, safe_x + SAFE_W_MM),
-        "pattern": (0.0, pattern_bottom, BLEED_W_MM, pattern_top - pattern_bottom),
+        "icon": icon,
+        # Added to the content x when an icon is drawn, so the type clears it.
+        "name_indent": name_indent,
+        "band": (content_x, band_top, content_w, band_height),
+        "panel": (safe_x, panel_bottom, SAFE_W_MM, panel_top - panel_bottom),
+        "panel_radius": PANEL_RADIUS_MM,
+        "content": (content_x, content_w),
+        "hole": (BLEED_W_MM / 2.0, hole_centre_y, HOLE_DIAMETER_MM / 2.0 + HOLE_PLATE_PAD_MM),
+        "pattern": (0.0, 0.0, BLEED_W_MM, BLEED_H_MM),
+    }
+
+
+def back_layout() -> dict:
+    """Where everything on the back face goes, in millimetres.
+
+    Same conventions as :func:`front_layout`, and the same idea: pattern
+    everywhere, plates where something has to be read. The extra element here
+    is ``nfc`` — the disc the round NFC sticker is meant to land on, marked so
+    the owner sticks it somewhere a phone can actually find it and a finder
+    knows to tap it.
+    """
+    safe_x = BLEED_MARGIN_MM + SAFE_MARGIN_MM
+    safe_y = safe_x
+    content_x = safe_x + PANEL_PAD_MM
+    content_w = SAFE_W_MM - PANEL_PAD_MM * 2.0
+
+    nfc_r = NFC_DISC_DIAMETER_MM / 2.0
+    nfc_cy = 76.0
+    nfc = (BLEED_W_MM / 2.0, nfc_cy, nfc_r)
+
+    panel_bottom = safe_y
+    panel_top = 60.0
+    footer_baseline = panel_bottom + 2.5
+    qr_side = 19.0
+    qr = (BLEED_W_MM / 2.0 - qr_side / 2.0, footer_baseline + 4.0, qr_side, qr_side)
+    # Nothing may be set below this line, or type lands on the symbol's quiet
+    # zone and the code stops scanning.
+    body_floor = qr[1] + qr_side + 3.5
+    heading_baseline = panel_top - 6.0
+
+    hole_centre_y = BLEED_H_MM - BLEED_MARGIN_MM - HOLE_CENTRE_FROM_TRIM_TOP_MM
+    return {
+        "nfc": nfc,
+        "nfc_kicker_baseline": nfc_cy + 3.0,
+        "nfc_label_baseline": nfc_cy - 5.5,
+        "panel": (safe_x, panel_bottom, SAFE_W_MM, panel_top - panel_bottom),
+        "panel_radius": PANEL_RADIUS_MM,
+        "content": (content_x, content_w),
+        "heading_baseline": heading_baseline,
+        "body_floor": body_floor,
+        "qr": qr,
+        "footer_baseline": footer_baseline,
+        "hole": (BLEED_W_MM / 2.0, hole_centre_y, HOLE_DIAMETER_MM / 2.0 + HOLE_PLATE_PAD_MM),
+        "pattern": (0.0, 0.0, BLEED_W_MM, BLEED_H_MM),
     }
 
 
 def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
-    """Front face: motif, name plate, QR symbol.
-
-    Laid out from the bottom up. The QR block and the name plate are fixed
-    commitments — a shrunken symbol will not scan and a clipped name defeats
-    the tag — so they claim their space first, and the motif takes whatever
-    height is left. That way an optional accent band cannot push the name down
-    onto the symbol.
-    """
+    """Front face: motif over the whole tag, name plate and QR symbol on top."""
     _apply_boxes(pdf)
     design = face.design
     ink = HexColor(design.ink)
+    field = HexColor(design.field)
     muted = _muted(ink)
 
-    # Field colour covers the full bleed, never only the trim.
-    pdf.setFillColor(HexColor(design.field))
-    pdf.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
-
     layout = front_layout(accent_band=design.accent_band)
+
+    # Field colour covers the full bleed, never only the trim — and then the
+    # motif covers the field.
+    pdf.setFillColor(field)
+    pdf.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
+    _draw_motif(pdf, Box(*(value * mm for value in layout["pattern"])), design)
+
+    _draw_plate(pdf, Box(*(value * mm for value in layout["panel"])), design)
+
+    content_x, content_w = (value * mm for value in layout["content"])
     footnote_y = layout["footnote_y"] * mm
     qr_box = Box(*(value * mm for value in layout["qr"]))
     subtitle_baseline = layout["subtitle_baseline"] * mm
     name_baseline = layout["name_baseline"] * mm
     band_top = layout["band"][1] * mm
     band_height = layout["band"][3] * mm
-    rule_y = layout["rule_y"] * mm
-
-    _draw_motif(pdf, Box(*(value * mm for value in layout["pattern"])), design)
-
-    pdf.setStrokeColor(ink)
-    pdf.setLineWidth(0.5)
-    pdf.line(SAFE.x, rule_y, SAFE.right, rule_y)
 
     if design.accent_band:
         pdf.setFillColor(HexColor(design.accent))
-        pdf.rect(SAFE.x, band_top, SAFE.width, band_height, stroke=0, fill=1)
+        pdf.rect(content_x, band_top, content_w, band_height, stroke=0, fill=1)
+
+    text_x, text_w = content_x, content_w
+    if face.icon:
+        _draw_icon(pdf, Box(*(value * mm for value in layout["icon"])), face, design)
+        text_x += layout["name_indent"] * mm
+        text_w -= layout["name_indent"] * mm
 
     if face.display_name:
         _draw_fitted(
@@ -283,9 +367,9 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
             font=FONT_BOLD,
             max_size=16,
             min_size=9,
-            x=SAFE.x,
+            x=text_x,
             y=name_baseline,
-            max_width=SAFE.width,
+            max_width=text_w,
             color=ink,
         )
     if face.subtitle:
@@ -295,9 +379,9 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
             font=FONT_REGULAR,
             max_size=8.5,
             min_size=6.5,
-            x=SAFE.x,
+            x=text_x,
             y=subtitle_baseline,
-            max_width=SAFE.width,
+            max_width=text_w,
             color=muted,
         )
 
@@ -311,63 +395,63 @@ def _draw_front(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
         leading=9.4,
         x=qr_box.right + 4 * mm,
         top=qr_box.top - 2.5 * mm,
-        max_width=SAFE.right - qr_box.right - 4 * mm,
+        max_width=content_x + content_w - qr_box.right - 4 * mm,
         color=muted,
     )
 
     pdf.setFillColor(muted)
     pdf.setFont(FONT_REGULAR, 5.4)
     pdf.drawString(
-        SAFE.x, footnote_y, "No personal details are shown unless this bag is reported lost."
+        content_x, footnote_y, "No personal details are shown unless this bag is reported lost."
     )
 
-    _punch_hole(pdf, design)
+    _punch_hole(pdf, design, layout)
     if guides:
         _draw_guides(pdf)
 
 
 def _draw_back(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
-    """Back face: finder instructions above a second QR symbol.
+    """Back face: the NFC landing disc above a short note and a second symbol.
 
-    Laid out like the front: the QR block is reserved first, from the bottom
-    of the safety box, and the instructions must fit above it. If they would
-    not, the type steps down rather than letting a line run into the quiet
-    zone — a symbol with text over its quiet zone may not scan.
+    The disc is the point of this face. A round sticker hidden anywhere else on
+    the bag is a sticker nobody taps, so the tag says where it goes and says
+    what to do with it.
+
+    Type steps down rather than running into the symbol's quiet zone: a code
+    with text over its quiet zone may not scan at all.
     """
     _apply_boxes(pdf)
     design = face.design
     ink = HexColor(design.ink)
+    field = HexColor(design.field)
     muted = _muted(ink)
 
-    pdf.setFillColor(HexColor(design.field))
+    layout = back_layout()
+
+    pdf.setFillColor(field)
     pdf.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
+    _draw_motif(pdf, Box(*(value * mm for value in layout["pattern"])), design)
 
-    # A narrow strip of the same motif keeps both faces recognisably one tag.
-    strip = Box(0, PAGE_H - HOLE_ZONE_MM * mm - 12 * mm, PAGE_W, 12 * mm)
-    _draw_motif(pdf, strip, design)
+    _draw_nfc_disc(pdf, layout, design)
+    _draw_plate(pdf, Box(*(value * mm for value in layout["panel"])), design)
 
-    footer_y = SAFE.y
-    qr_side = min(SAFE.width * 0.40, 23 * mm)
-    qr_box = Box(SAFE.cx - qr_side / 2.0, footer_y + 5 * mm, qr_side, qr_side)
-    floor = qr_box.top + 4 * mm
+    content_x, content_w = (value * mm for value in layout["content"])
+    qr_box = Box(*(value * mm for value in layout["qr"]))
+    floor = layout["body_floor"] * mm
 
-    steps = (
-        "Scan the code on the front.",
-        "The page tells you whether the owner reported the bag lost.",
-        "If they did, you can message them without sharing your number.",
-        "If they did not, no personal details are shown at all.",
+    body = (
+        "Tap the circle above with your phone, or scan the code below. "
+        "The page tells you whether the owner has reported this bag lost, and "
+        "lets you message them without either of you sharing a number."
     )
-    heading_top = strip.y - 9 * mm
-    indent = 4.5 * mm
 
-    # Largest size at which heading and steps clear the QR block.
-    for size in (7.2, 6.9, 6.6, 6.3, 6.0):
-        leading = size * 1.28
-        needed = 11.5 * 1.2 + 3 * mm
-        for step in steps:
-            lines = len(_wrap(step, FONT_REGULAR, size, SAFE.width - indent))
-            needed += lines * leading + 2 * mm
-        if heading_top - needed >= floor:
+    # Largest size at which the heading and the note still clear the symbol.
+    size, leading = 7.4, 9.4
+    for candidate in (7.4, 7.0, 6.6, 6.2, 5.8):
+        size = candidate
+        leading = candidate * 1.28
+        needed = 11.5 * 1.2 + 3 * mm + len(_wrap(body, FONT_REGULAR, size, content_w)) * leading
+        if layout["heading_baseline"] * mm - needed >= floor:
             break
 
     cursor = _draw_fitted(
@@ -376,36 +460,33 @@ def _draw_back(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
         font=FONT_BOLD,
         max_size=11.5,
         min_size=9,
-        x=SAFE.x,
-        y=heading_top,
-        max_width=SAFE.width,
+        x=content_x,
+        y=layout["heading_baseline"] * mm,
+        max_width=content_w,
         color=ink,
     )
     cursor -= 3 * mm
-    for index, step in enumerate(steps, start=1):
-        pdf.setFillColor(HexColor(design.accent))
-        pdf.setFont(FONT_BOLD, size)
-        pdf.drawString(SAFE.x, cursor, str(index))
-        cursor = _draw_wrapped(
-            pdf,
-            step,
-            font=FONT_REGULAR,
-            size=size,
-            leading=leading,
-            x=SAFE.x + indent,
-            top=cursor,
-            max_width=SAFE.width - indent,
-            color=ink,
-        )
-        cursor -= 2 * mm
+    _draw_wrapped(
+        pdf,
+        body,
+        font=FONT_REGULAR,
+        size=size,
+        leading=leading,
+        x=content_x,
+        top=cursor,
+        max_width=content_w,
+        color=ink,
+    )
 
     _draw_qr(pdf, qr_box, face.scan_url, ink)
 
     pdf.setFillColor(muted)
     pdf.setFont(FONT_REGULAR, 5.4)
-    pdf.drawCentredString(SAFE.cx, footer_y, "dynamic luggage tag")
+    pdf.drawCentredString(
+        BLEED_W_MM / 2.0 * mm, layout["footer_baseline"] * mm, "dynamic luggage tag"
+    )
 
-    _punch_hole(pdf, design)
+    _punch_hole(pdf, design, layout)
     if guides:
         _draw_guides(pdf)
 
@@ -415,14 +496,106 @@ def _draw_back(pdf: canvas.Canvas, face: TagFace, *, guides: bool) -> None:
 # --------------------------------------------------------------------------
 
 
-def _punch_hole(pdf: canvas.Canvas, design: Design) -> None:
-    """Marks where the strap hole is punched, so nothing important sits there."""
-    radius = (HOLE_DIAMETER_MM / 2.0) * mm
-    centre_y = TRIM.top - HOLE_CENTRE_FROM_TRIM_TOP_MM * mm
+def _draw_plate(pdf: canvas.Canvas, box: Box, design: Design) -> None:
+    """A rounded plate of plain field colour, laid over the motif."""
     pdf.setFillColor(HexColor(design.field))
     pdf.setStrokeColor(_muted(HexColor(design.ink)))
+    pdf.setLineWidth(0.4)
+    pdf.roundRect(box.x, box.y, box.width, box.height, PANEL_RADIUS_MM * mm, stroke=1, fill=1)
+
+
+def _draw_nfc_disc(pdf: canvas.Canvas, layout: dict, design: Design) -> None:
+    """The round sticker's landing zone, and the two words that explain it."""
+    cx, cy, radius = (value * mm for value in layout["nfc"])
+    ink = HexColor(design.ink)
+    muted = _muted(ink)
+
+    pdf.setFillColor(HexColor(design.field))
+    pdf.setStrokeColor(muted)
+    pdf.setLineWidth(0.5)
+    pdf.circle(cx, cy, radius, stroke=1, fill=1)
+
+    # A dashed inner ring: the sticker's own edge, so it is obvious the circle
+    # is somewhere to put something rather than somewhere to write.
+    pdf.saveState()
+    pdf.setDash(1.6, 1.6)
+    pdf.setStrokeColor(muted)
+    pdf.setLineWidth(0.6)
+    pdf.circle(cx, cy, radius - 1.6 * mm, stroke=1, fill=0)
+    pdf.restoreState()
+
+    pdf.setFillColor(muted)
+    pdf.setFont(FONT_REGULAR, 5.4)
+    pdf.drawCentredString(cx, layout["nfc_kicker_baseline"] * mm, "NFC STICKER")
+    pdf.setFillColor(ink)
+    pdf.setFont(FONT_BOLD, 8.4)
+    pdf.drawCentredString(cx, layout["nfc_label_baseline"] * mm, "SCAN HERE")
+
+
+def _draw_icon(pdf: canvas.Canvas, box: Box, face: TagFace, design: Design) -> None:
+    """The owner's bag icon, from the shared geometry in ``core/icons.py``."""
+    ink = HexColor(icons.colour(face.icon_color))
+    paper = HexColor(design.field)
+    scale = box.width / icons.ICON_BOX
+
+    def px(value: float) -> float:
+        return box.x + value * scale
+
+    def py(value: float) -> float:
+        return box.y + value * scale
+
+    def trace(points: list[list[float]]):
+        (first_x, first_y), *rest = points
+        path = pdf.beginPath()
+        path.moveTo(px(first_x), py(first_y))
+        for x, y in rest:
+            path.lineTo(px(x), py(y))
+        return path
+
+    for op in icons.ops(face.icon):
+        tone = ink if op["tone"] == "ink" else paper
+        pdf.setFillColor(tone)
+        pdf.setStrokeColor(tone)
+        kind = op["kind"]
+        if kind == "rect":
+            pdf.rect(px(op["x"]), py(op["y"]), op["w"] * scale, op["h"] * scale, stroke=0, fill=1)
+        elif kind == "rrect":
+            pdf.roundRect(
+                px(op["x"]),
+                py(op["y"]),
+                op["w"] * scale,
+                op["h"] * scale,
+                op["r"] * scale,
+                stroke=0,
+                fill=1,
+            )
+        elif kind == "circle":
+            pdf.circle(px(op["cx"]), py(op["cy"]), op["r"] * scale, stroke=0, fill=1)
+        elif kind == "poly":
+            path = trace(op["points"])
+            path.close()
+            pdf.drawPath(path, stroke=0, fill=1)
+        else:  # stroke
+            pdf.setLineWidth(op["width"] * scale)
+            pdf.setLineCap(1)
+            pdf.setLineJoin(1)
+            pdf.drawPath(trace(op["points"]), stroke=1, fill=0)
+
+
+def _punch_hole(pdf: canvas.Canvas, design: Design, layout: dict) -> None:
+    """Marks where the strap hole is punched, on its own plate of field colour.
+
+    The plate is what stops the motif — which now runs to every edge — from
+    being cut through by the punch.
+    """
+    cx, cy, plate_radius = (value * mm for value in layout["hole"])
+    muted = _muted(HexColor(design.ink))
+
+    pdf.setFillColor(HexColor(design.field))
+    pdf.setStrokeColor(muted)
     pdf.setLineWidth(0.3)
-    pdf.circle(TRIM.cx, centre_y, radius, stroke=1, fill=1)
+    pdf.circle(cx, cy, plate_radius, stroke=0, fill=1)
+    pdf.circle(cx, cy, (HOLE_DIAMETER_MM / 2.0) * mm, stroke=1, fill=1)
 
 
 def _draw_qr(pdf: canvas.Canvas, box: Box, url: str, color: Color) -> None:
