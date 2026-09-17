@@ -80,6 +80,17 @@ interface FieldProps {
   multiline?: boolean
   maxLength?: number
   disabled?: boolean
+  onFocus?: () => void
+  onBlur?: () => void
+  /**
+   * Turns a password field into one that can be read back.
+   *
+   * Controlled from outside, because on the sign-in page whether the password
+   * is showing is not only this field's business — the illustration beside it
+   * uncovers its eyes to match.
+   */
+  revealed?: boolean
+  onRevealToggle?: () => void
 }
 
 export function Field({
@@ -96,8 +107,30 @@ export function Field({
   multiline,
   maxLength,
   disabled,
+  onFocus,
+  onBlur,
+  revealed,
+  onRevealToggle,
 }: FieldProps) {
   const describedBy = error ? `${name}-error` : hint ? `${name}-hint` : undefined
+  const input = (
+    <input
+      id={name}
+      name={name}
+      type={onRevealToggle && revealed ? 'text' : type}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      autoComplete={autoComplete}
+      aria-describedby={describedBy}
+      aria-invalid={error ? true : undefined}
+      required={required}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      disabled={disabled}
+    />
+  )
   return (
     <div className={`field${error ? ' field--invalid' : ''}`}>
       <label htmlFor={name}>{label}</label>
@@ -107,6 +140,8 @@ export function Field({
           name={name}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onFocus={onFocus}
+          onBlur={onBlur}
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
           required={required}
@@ -114,21 +149,21 @@ export function Field({
           maxLength={maxLength}
           disabled={disabled}
         />
+      ) : onRevealToggle ? (
+        <div className="password-field__input">
+          {input}
+          <button
+            type="button"
+            className="password-field__toggle"
+            onClick={onRevealToggle}
+            aria-label={revealed ? 'Hide password' : 'Show password'}
+            aria-pressed={revealed}
+          >
+            {revealed ? 'Hide' : 'Show'}
+          </button>
+        </div>
       ) : (
-        <input
-          id={name}
-          name={name}
-          type={type}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          autoComplete={autoComplete}
-          aria-describedby={describedBy}
-          aria-invalid={error ? true : undefined}
-          required={required}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          disabled={disabled}
-        />
+        input
       )}
       {error ? (
         <span className="field__error" id={`${name}-error`}>

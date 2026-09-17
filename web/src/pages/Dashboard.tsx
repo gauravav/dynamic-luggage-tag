@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api, type Tag } from '../api/client'
 import { SwingingTag } from '../components/illustrations'
-import { BusyLabel, Skeleton } from '../components/motion'
+import { BusyLabel } from '../components/motion'
+import { PageLoader } from '../components/PageLoader'
 import { TagArt } from '../components/TagArt'
 import { Empty, Notice, StatusPill } from '../components/ui'
 import { FALLBACK_DESIGN, describe, formatDate, relativeTime } from '../lib/design'
@@ -167,15 +168,10 @@ export function Dashboard() {
       </AnimatePresence>
 
       {tags === null ? (
-        <div className="grid grid--3" aria-busy="true" aria-label="Loading your tags">
-          {[0, 1, 2].map((index) => (
-            <div key={index} className="tag-card">
-              <Skeleton height={0} style={{ paddingBottom: '146%' }} radius={10} />
-              <Skeleton height={18} width="60%" />
-              <Skeleton height={13} width="80%" />
-            </div>
-          ))}
-        </div>
+        <PageLoader
+          label="Loading your tags"
+          captions={['Reading your tags…', 'Matching the pattern…', 'Almost there…']}
+        />
       ) : tags.length === 0 ? (
         <motion.div
           className="card"
@@ -199,7 +195,7 @@ export function Dashboard() {
           </Empty>
         </motion.div>
       ) : (
-        <motion.div className="grid grid--3" layout>
+        <motion.div className="grid grid--3 grid--tags" layout>
           <AnimatePresence initial={true}>
             {tags.map((tag, index) => {
               const isNew = tag.id === newTagId

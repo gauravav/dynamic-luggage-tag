@@ -828,3 +828,65 @@ hr.rule { border: none; border-top: 1px solid var(--paper-line); margin: 28px 0;
   outline: 2px solid var(--forest);
   outline-offset: 10px;
 }
+
+/* ---------- The sign-in mole ---------- */
+
+.mole { width: 100%; }
+/* Clipped, not overflowing: held low, the tag runs off the bottom of the
+   frame on purpose, and it must not spill over the form beneath it. */
+.mole svg { display: block; }
+.mole--signin { max-width: 190px; margin: 0 auto 2px; }
+@media (max-width: 620px) {
+  .mole--signin { max-width: 152px; }
+}
+
+/* ---------- Loading: a tag being identified ---------- */
+
+.loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 16px 48px;
+}
+.loader__art { width: 148px; height: auto; display: block; }
+/* The lines are stacked on one another and cross-faded, so the block never
+   changes height as the wording changes and the page below never jumps. */
+.loader__caption {
+  position: relative;
+  height: 20px;
+  width: 100%;
+  margin: 0;
+  text-align: center;
+}
+.loader__line {
+  position: absolute;
+  inset: 0;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+
+/* ---------- Landing: the story scenes ---------- */
+
+.scene { display: block; width: 100%; height: auto; }
+.scene-frame {
+  background: var(--white);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 18px;
+  overflow: hidden;
+}
+.story-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 32px;
+  align-items: center;
+}
+.story-row--reversed .scene-frame { order: 2; }
+@media (max-width: 860px) {
+  .story-row { grid-template-columns: 1fr; gap: 20px; }
+  /* Stacked, the picture always leads — reversing would put the words first
+     on one row and not the other, which reads as a mistake. */
+  .story-row--reversed .scene-frame { order: 0; }
+}

@@ -24,7 +24,8 @@ import { ApiError, api, type ScanPage as ScanPageData, type Tag } from '../api/c
 import { SiteHeader } from '../components/Layout'
 import { TagArt } from '../components/TagArt'
 import { MessageSent, PinDrop, SwingingTag } from '../components/illustrations'
-import { BusyLabel, Reveal, SendLabel, Skeleton } from '../components/motion'
+import { BusyLabel, Reveal, SendLabel } from '../components/motion'
+import { PageLoader } from '../components/PageLoader'
 import { Field, Notice } from '../components/ui'
 import { askOpenTabToShow } from '../lib/appTabs'
 import { useTurnstile } from '../lib/turnstile'
@@ -132,9 +133,11 @@ export function ScanPage() {
 
     if (!data || !token || scanner === 'unknown' || scanner === 'owner') {
       return (
-        <div className="page wrap wrap--narrow" aria-busy="true" aria-label="Checking this tag">
-          <Skeleton height={150} radius={12} style={{ maxWidth: 210, margin: '0 auto 28px' }} />
-          <Skeleton height={190} radius={12} />
+        <div className="page wrap wrap--narrow">
+          <PageLoader
+            label="Checking this tag"
+            captions={['Reading the tag…', 'Looking it up…', 'Checking what may be shown…']}
+          />
         </div>
       )
     }

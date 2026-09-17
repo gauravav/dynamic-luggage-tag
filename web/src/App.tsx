@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { PageLoader } from './components/PageLoader'
 import { Dashboard } from './pages/Dashboard'
 import { Inbox } from './pages/Inbox'
 import { Landing } from './pages/Landing'
@@ -83,7 +84,7 @@ function RequireUser({ children }: { children: React.ReactElement }) {
   if (loading) {
     return (
       <div className="page wrap">
-        <span className="spinner" aria-label="Loading" />
+        <PageLoader label="Checking your session" captions={['Checking your session…']} />
       </div>
     )
   }

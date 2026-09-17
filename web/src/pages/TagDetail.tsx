@@ -12,6 +12,7 @@ import {
 } from '../api/client'
 import { IconPicker } from '../components/IconPicker'
 import { NfcCard } from '../components/NfcCard'
+import { PageLoader } from '../components/PageLoader'
 import { TagArt } from '../components/TagArt'
 import { BusyLabel, Skeleton, Stagger, StaggerItem, SuccessTick } from '../components/motion'
 import { Empty, Field, Notice, StatusPill, Toggle } from '../components/ui'
@@ -166,18 +167,7 @@ export function TagDetail() {
   if (!tag) {
     return (
       <div className="page wrap">
-        {error ? (
-          <Notice>{error}</Notice>
-        ) : (
-          <div className="grid grid--split" style={{ alignItems: 'start' }} aria-busy="true" aria-label="Loading tag">
-            <div className="stack">
-              <Skeleton height={34} width="55%" />
-              <Skeleton height={120} radius={12} />
-              <Skeleton height={220} radius={12} />
-            </div>
-            <Skeleton height={0} style={{ paddingBottom: '146%' }} radius={12} />
-          </div>
-        )}
+        {error ? <Notice>{error}</Notice> : <PageLoader label="Loading this tag" />}
       </div>
     )
   }

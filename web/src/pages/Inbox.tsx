@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, type RelayThread, type ThreadSummary } from '../api/client'
-import { SendLabel, Skeleton } from '../components/motion'
+import { SendLabel } from '../components/motion'
+import { PageLoader } from '../components/PageLoader'
 import { Empty, Field, Notice } from '../components/ui'
 import { formatDateTime, relativeTime } from '../lib/design'
 
@@ -69,14 +70,10 @@ export function Inbox() {
       <AnimatePresence>{error && <Notice key={error}>{error}</Notice>}</AnimatePresence>
 
       {threads === null ? (
-        <div className="grid grid--split" style={{ alignItems: 'start' }} aria-busy="true" aria-label="Loading messages">
-          <div className="card stack">
-            <Skeleton height={54} />
-            <Skeleton height={54} />
-            <Skeleton height={54} />
-          </div>
-          <Skeleton height={240} radius={12} />
-        </div>
+        <PageLoader
+          label="Loading your inbox"
+          captions={['Opening your inbox…', 'Decrypting your messages…']}
+        />
       ) : threads.length === 0 ? (
         <div className="card">
           <Empty title="No messages">
