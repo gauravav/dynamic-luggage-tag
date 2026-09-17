@@ -11,6 +11,8 @@ Encrypted, privacy-first digital luggage tags. Every traveler gets one unique vi
 ## What it does
 
 - Generates one unique pattern + QR code per user, used across all their luggage
+- The pattern covers the whole tag, so a bag is recognisable down the length of a carousel
+- Each tag can carry a bag icon — suitcase, carry-on, duffel, backpack and so on — in a colour of its own
 - Public scan page — no login required for the person who finds a bag
 - Owner controls disclosure: contact info is hidden until the bag is reported **Lost**
 - One-time, city-level location capture on scan (opt-in for the finder)
@@ -78,6 +80,23 @@ size — 108.40 × 74.10 mm at the bleed, trimming to 104.40 × 70.10 mm, with a
 99.40 × 65.10 mm safety area. All four PDF boxes are declared, fonts are
 embedded, and the artwork runs to the bleed edge. Add `?guides=1` to proof the
 trim and safety lines on screen.
+
+Both faces print. The motif runs edge to edge on each of them, with plates of
+plain colour only where something has to be read — the name plate, the strap
+punch, and, on the back, a marked circle for a 25 mm round NFC sticker. The
+app previews both faces, so what goes on the bag is what was on screen.
+
+## NFC
+
+A tag's link can be written to an NFC sticker (NTAG213/215/216) so a phone
+opens it with a tap. Writing from the browser needs Web NFC, which only Chrome
+on Android implements; an iPhone writes the same sticker from an app such as
+NFC Tools or NXP's TagWriter, and the app copies the link out for you and takes
+the chip's serial back afterwards so the sticker stays claimed to your account.
+
+Holding a written sticker against the phone from the tag list answers the
+question the tag exists for — which bag is this? — by scrolling to it and
+setting it swinging.
 
 ## Security & privacy
 

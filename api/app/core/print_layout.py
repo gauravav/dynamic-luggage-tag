@@ -56,8 +56,6 @@ SAFE_MARGIN_MM = (TRIM_W_MM - SAFE_W_MM) / 2.0  # 2.50 mm inside the trim
 # actually punches.
 HOLE_DIAMETER_MM = 5.50
 HOLE_CENTRE_FROM_TRIM_TOP_MM = 8.50
-# Plain field kept clear at the top so the punch does not land mid-motif.
-HOLE_ZONE_MM = 16.0
 # A disc of plain field behind the punch, so the motif stops short of the hole
 # rather than being cut through by it.
 HOLE_PLATE_PAD_MM = 3.0

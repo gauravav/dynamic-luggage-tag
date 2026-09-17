@@ -47,7 +47,6 @@ export const TRIM_W_MM = 70.1
 export const SAFE_W_MM = 65.1
 export const BLEED_MARGIN_MM = (BLEED_W_MM - TRIM_W_MM) / 2
 export const SAFE_MARGIN_MM = (TRIM_W_MM - SAFE_W_MM) / 2
-export const HOLE_ZONE_MM = 16
 export const HOLE_DIAMETER_MM = 5.5
 export const HOLE_CENTRE_FROM_TRIM_TOP_MM = 8.5
 export const HOLE_PLATE_PAD_MM = 3.0
