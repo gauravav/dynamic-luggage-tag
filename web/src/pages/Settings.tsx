@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiError, api, type AccountDetail, type SessionRecord } from '../api/client'
+import { API_BASE, ApiError, api, type AccountDetail, type SessionRecord } from '../api/client'
 import { Field, Notice, Spinner, Toggle } from '../components/ui'
 import { formatDateTime } from '../lib/design'
 import { useSession } from '../state/session'
@@ -430,7 +430,7 @@ function DataSection({ onDeleted }: { onDeleted: () => Promise<void> }) {
     try {
       await api.delete('/account', { password, confirm })
       await onDeleted()
-      window.location.assign('/')
+      window.location.assign(import.meta.env.BASE_URL)
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not delete your account.')
     } finally {
@@ -444,7 +444,7 @@ function DataSection({ onDeleted }: { onDeleted: () => Promise<void> }) {
       <p className="faint" style={{ marginBottom: 14 }}>
         Export everything held about you, or delete it for good.
       </p>
-      <a className="btn btn--ghost btn--sm" href="/api/v1/account/export" download>
+      <a className="btn btn--ghost btn--sm" href={`${API_BASE}/account/export`} download>
         Download my data
       </a>
 

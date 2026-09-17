@@ -12,7 +12,10 @@
  *    per-field messages, so forms can show them next to the right input.
  */
 
-export const API_BASE = '/api/v1'
+// import.meta.env.BASE_URL is Vite's configured `base` (e.g. '/' in dev, or
+// '/dynamic-luggage-tag/' when built for a path-mounted deployment), so the
+// API is always reached under whatever path the app itself is served from.
+export const API_BASE = `${import.meta.env.BASE_URL}api/v1`.replace(/\/{2,}/g, '/')
 
 const CSRF_COOKIE = 'dlt_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'

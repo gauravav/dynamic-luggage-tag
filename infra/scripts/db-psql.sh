@@ -7,16 +7,24 @@
 # cannot verify the certificate chain because the CA is not mounted there.
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 need_container_cli
-container_running || die "$DB_CONTAINER is not running. Run: make db-up"
+container_running || die "The database is not running. Run: make db-up"
 
 PASSWORD="$(secret db_app_password)"
 
 if command -v psql >/dev/null 2>&1; then
-    PGPASSWORD="$PASSWORD" \
-    PGSSLMODE=verify-ca \
-    PGSSLROOTCERT="$CERTS/ca.crt" \
-        exec psql -h 127.0.0.1 -p "$DB_HOST_PORT" -U "$DB_APP_USER" -d "$DB_NAME" "$@"
+    if [[ "$DB_SSLMODE" == "verify-ca" ]]; then
+        PGPASSWORD="$PASSWORD" \
+        PGSSLMODE=verify-ca \
+        PGSSLROOTCERT="$CERTS/ca.crt" \
+            exec psql -h 127.0.0.1 -p "$DB_HOST_PORT" -U "$DB_APP_USER" -d "$DB_NAME" "$@"
+    else
+        PGPASSWORD="$PASSWORD" \
+        PGSSLMODE="$DB_SSLMODE" \
+            exec psql -h 127.0.0.1 -p "$DB_HOST_PORT" -U "$DB_APP_USER" -d "$DB_NAME" "$@"
+    fi
 fi
+
+[[ "$EXTERNAL_DB" == "1" ]] && die "psql is required on the host to connect to an external database"
 
 warn "No psql on the host; using the client inside the container (no CA verification)."
 exec container exec --interactive --tty \

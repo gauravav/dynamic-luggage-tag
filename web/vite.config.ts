@@ -60,6 +60,9 @@ type Connect = {
 // SameSite=Strict session cookies work in development exactly as they do in
 // production behind one domain — no CORS exception, no relaxed cookie policy.
 export default defineConfig({
+  // '/' for local dev; a path-mounted deployment (e.g. nginx serving this
+  // app under /dynamic-luggage-tag/) sets VITE_BASE_PATH at build time.
+  base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [react(), csp()],
   server: {
     port: 5173,

@@ -3,11 +3,44 @@
 # database settings to api/.env.
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+APP_PASSWORD="$(secret db_app_password)"
+
+if [[ "$EXTERNAL_DB" == "1" ]]; then
+    [[ -n "$DB_SUPERUSER_PASSWORD" ]] || die "DLT_DB_SUPERUSER_PASSWORD is required when DLT_DB_EXTERNAL=1"
+    command -v psql >/dev/null 2>&1 || die "psql is required on the host to provision an external database"
+
+    log "Using the externally managed PostgreSQL on 127.0.0.1:$DB_HOST_PORT (DLT_DB_EXTERNAL=1)"
+
+    if ! psql_super -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1; then
+        log "Creating database $DB_NAME..."
+        psql_super -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_SUPERUSER\"" >/dev/null
+    fi
+
+    log "Applying provisioning SQL..."
+    psql_super -d "$DB_NAME" \
+        -v app_user="$DB_APP_USER" \
+        -v app_password="$APP_PASSWORD" \
+        -v db_name="$DB_NAME" \
+        < "$INFRA/container/initdb/01-schema.sql" >/dev/null
+
+    if [[ "${DLT_ENV:-development}" != "production" ]]; then
+        log "Ensuring test database ${DB_NAME}_test..."
+        psql_super -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}_test'" | grep -q 1 \
+            || psql_super -d postgres -c "CREATE DATABASE \"${DB_NAME}_test\" OWNER \"$DB_APP_USER\"" >/dev/null
+        psql_super -d "${DB_NAME}_test" \
+            -c "CREATE SCHEMA IF NOT EXISTS dlt AUTHORIZATION \"$DB_APP_USER\"" \
+            -c "ALTER ROLE \"$DB_APP_USER\" IN DATABASE \"${DB_NAME}_test\" SET search_path = public" >/dev/null
+    fi
+
+    "$INFRA/scripts/write-env.sh"
+    log "PostgreSQL ready on 127.0.0.1:$DB_HOST_PORT (external, sslmode=$DB_SSLMODE)"
+    exit 0
+fi
+
 need_container_cli
 "$INFRA/scripts/gen-certs.sh" "$DB_CONTAINER"
 
 SUPER_PASSWORD="$(secret db_superuser_password)"
-APP_PASSWORD="$(secret db_app_password)"
 
 if ! container image ls --format json 2>/dev/null | grep -q "\"$DB_IMAGE\""; then
     log "Building $DB_IMAGE..."
