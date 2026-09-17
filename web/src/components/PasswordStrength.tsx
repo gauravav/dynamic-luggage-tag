@@ -49,6 +49,15 @@ interface Props {
   error?: string
   autoComplete?: string
   required?: boolean
+  onFocus?: () => void
+  onBlur?: () => void
+  /**
+   * Told when the password becomes readable or hidden again.
+   *
+   * The sign-up page draws an illustration beside this field that uncovers its
+   * eyes to match, and only this component knows which way the toggle is.
+   */
+  onRevealChange?: (revealed: boolean) => void
 }
 
 export function PasswordField({
@@ -60,6 +69,9 @@ export function PasswordField({
   error,
   autoComplete = 'new-password',
   required,
+  onFocus,
+  onBlur,
+  onRevealChange,
 }: Props) {
   const [visible, setVisible] = useState(false)
   const result = strength(value, context.filter(Boolean))
@@ -88,6 +100,8 @@ export function PasswordField({
             type={visible ? 'text' : 'password'}
             value={value}
             onChange={(event) => onChange(event.target.value)}
+            onFocus={onFocus}
+            onBlur={onBlur}
             autoComplete={autoComplete}
             aria-describedby={hintId}
             aria-invalid={error ? true : undefined}
@@ -98,7 +112,11 @@ export function PasswordField({
             className="password-field__toggle"
             // Keeps the caret in the field; see the note in ui.tsx.
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => setVisible((previous) => !previous)}
+            onClick={() => {
+              const next = !visible
+              setVisible(next)
+              onRevealChange?.(next)
+            }}
             aria-label={visible ? 'Hide password' : 'Show password'}
             aria-pressed={visible}
           >

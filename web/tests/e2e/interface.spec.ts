@@ -95,6 +95,26 @@ test.describe('the sign-in mole', () => {
     await expect(page.locator('#password')).toHaveAttribute('type', 'password')
   })
 
+  test('it is on the sign-up page too, and behaves the same', async ({ page }) => {
+    await page.goto(`${APP}/register`)
+    await expect(page.locator('.mole--signin')).toBeVisible()
+
+    await page.fill('#email', 'traveller@example.com')
+    await expect(page.getByText('Reading along…')).toBeVisible()
+
+    // The name is not a secret either, so it keeps reading.
+    await page.click('#name')
+    await expect(page.getByText('Reading along…')).toBeVisible()
+
+    await page.click('#password')
+    await expect(page.getByText('Not looking.')).toBeVisible()
+
+    // The sign-up password field has its own Show, and the mole follows it.
+    await page.getByRole('button', { name: 'Show password' }).click()
+    await expect(page.getByText('Only because you asked.')).toBeVisible()
+    await expect(page.locator('#password')).toHaveAttribute('type', 'text')
+  })
+
   test('its eyes are open while reading and shut for a password', async ({ page }) => {
     await page.goto(`${APP}/login`)
 
