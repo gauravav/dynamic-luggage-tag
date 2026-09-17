@@ -1,6 +1,12 @@
 import { Link } from 'react-router-dom'
 import { SwingingTag } from '../components/illustrations'
 import { Reveal, RevealOnScroll, Stagger, StaggerItem } from '../components/motion'
+import {
+  CarouselScene,
+  EncryptedRelayScene,
+  FinderScene,
+  MarkLostScene,
+} from '../components/story'
 import { TagArt } from '../components/TagArt'
 import type { DesignSpec } from '../api/client'
 import { FALLBACK_DESIGN } from '../lib/design'
@@ -103,6 +109,10 @@ export function Landing() {
           crowded belt.
         </p>
         </RevealOnScroll>
+        <RevealOnScroll className="scene-frame" style={{ marginTop: 28 }} delay={0.05}>
+          <CarouselScene />
+        </RevealOnScroll>
+
         <Stagger className="grid grid--3" style={{ marginTop: 36 }} onScroll>
           {SAMPLES.map((sample) => (
             <StaggerItem key={sample.caption}>
@@ -119,6 +129,34 @@ export function Landing() {
             </StaggerItem>
           ))}
         </Stagger>
+      </section>
+
+      <hr className="rule" />
+
+      <section className="wrap" style={{ paddingBottom: 56 }}>
+        <RevealOnScroll>
+        <p className="kicker">when a bag goes missing</p>
+        <h2>Nothing is shown until you say the bag is gone.</h2>
+        </RevealOnScroll>
+
+        <div className="stack" style={{ gap: 40, marginTop: 36 }}>
+          <StoryRow
+            scene={<MarkLostScene />}
+            title="You flip one switch."
+            body="Until you do, a scan shows a page that says the owner knows where this bag is,
+                  and nothing else — no name, no number, no address. Report it lost and your name
+                  appears, along with a way to reach you. Mark it safe again and it disappears."
+          />
+          <StoryRow
+            reversed
+            scene={<FinderScene />}
+            title="A stranger taps it, and you know."
+            body="No app, no account, no sign-up wall — their phone just opens a page. They can
+                  tell you roughly where they found it and send you a message, and you get a note
+                  about it within seconds. Their number never reaches you, and yours never
+                  reaches them."
+          />
+        </div>
       </section>
 
       <hr className="rule" />
@@ -173,6 +211,10 @@ export function Landing() {
           based on rules you control.
         </p>
         </RevealOnScroll>
+        <RevealOnScroll className="scene-frame" style={{ marginTop: 28 }} delay={0.05}>
+          <EncryptedRelayScene />
+        </RevealOnScroll>
+
         <Stagger className="grid grid--2" style={{ marginTop: 32 }} onScroll>
           {[
             [
@@ -215,5 +257,35 @@ export function Landing() {
         </RevealOnScroll>
       </section>
     </div>
+  )
+}
+
+/**
+ * One beat of the story: a looping scene beside the sentence it illustrates.
+ *
+ * On a phone the two stack, scene first — the picture is what makes someone
+ * stop scrolling, and the words are what they read once they have.
+ */
+function StoryRow({
+  scene,
+  title,
+  body,
+  reversed,
+}: {
+  scene: React.ReactNode
+  title: string
+  body: string
+  reversed?: boolean
+}) {
+  return (
+    <RevealOnScroll className={`story-row${reversed ? ' story-row--reversed' : ''}`}>
+      <div className="scene-frame">{scene}</div>
+      <div>
+        <h3 style={{ fontSize: 20, marginBottom: 10 }}>{title}</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          {body}
+        </p>
+      </div>
+    </RevealOnScroll>
   )
 }
