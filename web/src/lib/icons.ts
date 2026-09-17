@@ -18,13 +18,16 @@ export type IconOp =
   | { kind: 'rect'; x: number; y: number; w: number; h: number; tone: IconTone }
   | { kind: 'rrect'; x: number; y: number; w: number; h: number; r: number; tone: IconTone }
   | { kind: 'circle'; cx: number; cy: number; r: number; tone: IconTone }
-  | { kind: 'poly'; points: number[][]; tone: IconTone }
-  | { kind: 'stroke'; points: number[][]; width: number; tone: IconTone }
+  | { kind: 'poly'; points: [number, number][]; tone: IconTone }
+  | { kind: 'stroke'; points: [number, number][]; width: number; tone: IconTone }
 
 export const ICON_BOX = 100.0
 
+/** Named once, because `iconColour` falls back to it. */
+const INK_HEX = '#242017'
+
 export const ICON_COLORS: Record<string, string> = {
-  ink: '#242017',
+  ink: INK_HEX,
   forest: '#2F5D4E',
   brick: '#9C3B2A',
   brass: '#8C6221',
@@ -109,5 +112,5 @@ export function iconOps(name: string | null | undefined): IconOp[] {
 
 /** The hex colour for a palette name, falling back to ink. */
 export function iconColour(name: string | null | undefined): string {
-  return ICON_COLORS[name ?? DEFAULT_ICON_COLOR] ?? ICON_COLORS[DEFAULT_ICON_COLOR]
+  return ICON_COLORS[name ?? DEFAULT_ICON_COLOR] ?? INK_HEX
 }
