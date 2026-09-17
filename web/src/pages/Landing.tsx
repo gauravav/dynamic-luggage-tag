@@ -6,11 +6,19 @@ import type { DesignSpec } from '../api/client'
 import { FALLBACK_DESIGN } from '../lib/design'
 
 /** Three sample designs, so the page shows the idea rather than describing it. */
-const SAMPLES: { design: DesignSpec; name: string; caption: string }[] = [
+const SAMPLES: {
+  design: DesignSpec
+  name: string
+  caption: string
+  icon: string
+  iconColor: string
+}[] = [
   {
     design: { ...FALLBACK_DESIGN, motif: 'weave', palette: 'forest' },
     name: 'R. Fernandez',
     caption: 'Forest weave',
+    icon: 'roller',
+    iconColor: 'forest',
   },
   {
     design: {
@@ -24,6 +32,8 @@ const SAMPLES: { design: DesignSpec; name: string; caption: string }[] = [
     },
     name: 'A. Okafor',
     caption: 'Brick dot',
+    icon: 'duffel',
+    iconColor: 'brick',
   },
   {
     design: {
@@ -37,6 +47,8 @@ const SAMPLES: { design: DesignSpec; name: string; caption: string }[] = [
     },
     name: 'M. Laurent',
     caption: 'Brass diagonal',
+    icon: 'backpack',
+    iconColor: 'brass',
   },
 ]
 
@@ -71,6 +83,8 @@ export function Landing() {
                 design={SAMPLES[0]!.design}
                 name="R. Fernandez"
                 subtitle="Terminal 3 · Gate B12"
+                icon={SAMPLES[0]!.icon}
+                iconColor={SAMPLES[0]!.iconColor}
               />
             </SwingingTag>
           </div>
@@ -93,7 +107,13 @@ export function Landing() {
           {SAMPLES.map((sample) => (
             <StaggerItem key={sample.caption}>
               <figure className="tag-card lift" style={{ margin: 0 }}>
-                <TagArt design={sample.design} name={sample.name} subtitle="One design, every bag" />
+                <TagArt
+                  design={sample.design}
+                  name={sample.name}
+                  subtitle="One design, every bag"
+                  icon={sample.icon}
+                  iconColor={sample.iconColor}
+                />
                 <figcaption className="faint center">{sample.caption}</figcaption>
               </figure>
             </StaggerItem>

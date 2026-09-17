@@ -131,6 +131,63 @@ export const api = {
   delete: <T>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body }),
 }
 
+/**
+ * Fetches a file the API generates — the print PDF, the QR symbol — and hands
+ * it to the browser.
+ *
+ * A plain `<a href download>` looked simpler and was worse in three ways: it
+ * hard-coded `/api/v1`, which is wrong the moment the app is mounted under a
+ * path; a failure navigated away from the app to a page of JSON instead of
+ * showing an error; and the response's own Content-Security-Policy applied to
+ * it. Fetching the bytes ourselves sidesteps all three, and the caller gets a
+ * normal ApiError to display.
+ */
+async function fetchAsset(path: string): Promise<Blob> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { credentials: 'include' })
+  } catch {
+    throw new ApiError('network_error', 'Could not reach the server. Check your connection.', 0)
+  }
+  if (!response.ok) {
+    const payload = response.headers.get('Content-Type')?.includes('application/json')
+      ? await response.json().catch(() => null)
+      : null
+    throw new ApiError(
+      payload?.error?.code ?? 'http_error',
+      payload?.error?.message ?? 'Could not prepare that file.',
+      response.status,
+    )
+  }
+  return response.blob()
+}
+
+/** Downloads an API-generated file under a given name. */
+export async function downloadAsset(path: string, filename: string): Promise<void> {
+  const url = URL.createObjectURL(await fetchAsset(path))
+  try {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.append(link)
+    link.click()
+    link.remove()
+  } finally {
+    // Freed on the next frame: revoking it synchronously can beat the click.
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+}
+
+/** Opens an API-generated file in a new tab, for proofing on screen. */
+export async function openAsset(path: string): Promise<void> {
+  const url = URL.createObjectURL(await fetchAsset(path))
+  const opened = window.open(url, '_blank', 'noopener')
+  if (!opened) {
+    throw new ApiError('popup_blocked', 'Allow pop-ups for this site to open the file.', 0)
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 /* ---------------------------------------------------------------- types -- */
 
 export interface DesignSpec {
@@ -164,6 +221,9 @@ export interface Tag {
   status: 'safe' | 'lost'
   lost_at: string | null
   design: DesignSpec
+  /** Names from the fixed lists in lib/icons.ts, or null for no icon. */
+  icon: string | null
+  icon_color: string | null
   reveal_name: boolean
   reveal_message_relay: boolean
   notify_on_scan: boolean

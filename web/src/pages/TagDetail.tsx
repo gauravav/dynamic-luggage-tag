@@ -1,7 +1,16 @@
 import { AnimatePresence, motion, useAnimate } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ApiError, api, parseLocation, type ScanRecord, type Tag } from '../api/client'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  ApiError,
+  api,
+  downloadAsset,
+  openAsset,
+  parseLocation,
+  type ScanRecord,
+  type Tag,
+} from '../api/client'
+import { IconPicker } from '../components/IconPicker'
 import { NfcCard } from '../components/NfcCard'
 import { TagArt } from '../components/TagArt'
 import { BusyLabel, Skeleton, Stagger, StaggerItem, SuccessTick } from '../components/motion'
@@ -24,6 +33,13 @@ export function TagDetail() {
   const [rotating, setRotating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [savedLabel, setSavedLabel] = useState(false)
+
+  const [downloading, setDownloading] = useState<'pdf' | 'proof' | 'qr' | null>(null)
+
+  // Set when the page was reached by scanning the tag itself, so the artwork
+  // says "yes, this one" rather than looking like any other visit.
+  const [search] = useSearchParams()
+  const arrivedByScan = search.get('scanned') === '1'
 
   // Tag artwork appears twice (above the form on phones, in the sidebar on
   // desktop), and both react to the status changing.
@@ -85,6 +101,25 @@ export function TagDetail() {
       setError(cause instanceof ApiError ? cause.message : 'Could not save that change.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Fetches a generated file and hands it to the browser.
+   *
+   * With a filename it downloads; without one it opens in a new tab, which is
+   * what the guides proof and the bare symbol are for. Either way a failure
+   * shows up as an error on this page rather than as a page of raw JSON.
+   */
+  async function fetchFile(kind: 'pdf' | 'proof' | 'qr', path: string, filename?: string) {
+    setError(null)
+    setDownloading(kind)
+    try {
+      await (filename ? downloadAsset(path, filename) : openAsset(path))
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not prepare that file.')
+    } finally {
+      setDownloading(null)
     }
   }
 
@@ -174,10 +209,16 @@ export function TagDetail() {
         )}
       </AnimatePresence>
 
+      {arrivedByScan && (
+        <Notice kind="info">
+          You scanned this tag just now — this is the bag it belongs to.
+        </Notice>
+      )}
+
       {/* On phones the tag leads the page; on desktop it lives in the sidebar. */}
       <div className="mobile-only tag-detail__mobile-art">
         <div ref={mobileArtScope} style={{ transformOrigin: '50% 0%' }}>
-          <TagArt design={tag.design} name={user?.name ?? null} subtitle={tag.label} />
+          <TagFaces tag={tag} name={user?.name ?? null} excited={arrivedByScan} />
         </div>
       </div>
 
@@ -281,6 +322,20 @@ export function TagDetail() {
                 )}
               </AnimatePresence>
             </div>
+
+            <hr className="rule" style={{ margin: '20px 0' }} />
+
+            <IconPicker
+              icon={tag.icon}
+              color={tag.icon_color}
+              paper={tag.design.field}
+              disabled={busy}
+              onChange={(next) => patch({ icon: next.icon, icon_color: next.color })}
+            />
+            <p className="faint" style={{ marginTop: 12, marginBottom: 0 }}>
+              Printed beside your name, and shown on the card in your list — so the right bag is
+              the one you reach for.
+            </p>
           </section>
           </StaggerItem>
 
@@ -340,7 +395,7 @@ export function TagDetail() {
                 transition={{ type: 'spring', stiffness: 120, damping: 10 }}
                 style={{ transformOrigin: '50% 0%' }}
               >
-                <TagArt design={tag.design} name={user?.name ?? null} subtitle={tag.label} />
+                <TagFaces tag={tag} name={user?.name ?? null} excited={arrivedByScan} />
               </motion.div>
             </div>
           </div>
@@ -355,29 +410,40 @@ export function TagDetail() {
               embedded and the artwork runs to the bleed edge.
             </p>
             <div className="stack stack--tight">
-              <a
+              <button
+                type="button"
                 className="btn btn--primary btn--block"
-                href={`/api/v1/tags/${tag.id}/print.pdf`}
-                download
+                disabled={downloading !== null}
+                onClick={() =>
+                  fetchFile('pdf', `/tags/${tag.id}/print.pdf`, `luggage-tag-${tag.id}.pdf`)
+                }
               >
-                Download print PDF
-              </a>
-              <a
+                <BusyLabel
+                  busy={downloading === 'pdf'}
+                  idle="Download print PDF"
+                  working="Preparing…"
+                />
+              </button>
+              <button
+                type="button"
                 className="btn btn--ghost btn--block btn--sm"
-                href={`/api/v1/tags/${tag.id}/print.pdf?guides=1`}
-                target="_blank"
-                rel="noreferrer"
+                disabled={downloading !== null}
+                onClick={() => fetchFile('proof', `/tags/${tag.id}/print.pdf?guides=1`)}
               >
-                Proof with trim guides
-              </a>
-              <a
+                <BusyLabel
+                  busy={downloading === 'proof'}
+                  idle="Proof with trim guides"
+                  working="Preparing…"
+                />
+              </button>
+              <button
+                type="button"
                 className="btn btn--ghost btn--block btn--sm"
-                href={`/api/v1/tags/${tag.id}/qr.svg`}
-                target="_blank"
-                rel="noreferrer"
+                disabled={downloading !== null}
+                onClick={() => fetchFile('qr', `/tags/${tag.id}/qr.svg`)}
               >
-                QR code only (SVG)
-              </a>
+                <BusyLabel busy={downloading === 'qr'} idle="QR code only (SVG)" working="Preparing…" />
+              </button>
             </div>
           </div>
 
@@ -428,5 +494,86 @@ export function TagDetail() {
         </aside>
       </div>
     </motion.div>
+  )
+}
+
+/**
+ * The tag artwork, with a way to turn it over.
+ *
+ * The back is not decoration: it carries the circle the round NFC sticker goes
+ * on, and someone about to stick one down needs to see where. It flips rather
+ * than sitting side by side, because a tag has two faces and only ever shows
+ * one of them at a time.
+ */
+function TagFaces({
+  tag,
+  name,
+  excited,
+}: {
+  tag: Tag
+  name: string | null
+  /** Swings harder — used when this page was reached by scanning the tag. */
+  excited?: boolean
+}) {
+  const [side, setSide] = useState<'front' | 'back'>('front')
+
+  return (
+    <div className="tag-faces">
+      <motion.div
+        className="tag-faces__stage"
+        animate={excited ? { rotate: [-2.6, 2.6, -2.6] } : { rotate: 0 }}
+        transition={
+          excited
+            ? { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+            : { type: 'spring', stiffness: 200, damping: 20 }
+        }
+        style={{ transformOrigin: '50% 0%' }}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={side}
+            initial={{ rotateY: side === 'back' ? -90 : 90, opacity: 0 }}
+            animate={{ rotateY: 0, opacity: 1 }}
+            exit={{ rotateY: side === 'back' ? 90 : -90, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+          >
+            <TagArt
+              design={tag.design}
+              name={name}
+              subtitle={tag.label}
+              icon={tag.icon}
+              iconColor={tag.icon_color}
+              side={side}
+              title={
+                side === 'back'
+                  ? 'The back of the tag, with the NFC sticker circle'
+                  : `${tag.label ?? 'Tag'} — ${describe(tag.design)}`
+              }
+            />
+          </motion.div>
+        </AnimatePresence>
+      </motion.div>
+
+      <div className="segmented" role="group" aria-label="Which face of the tag to show">
+        {(['front', 'back'] as const).map((face) => (
+          <button
+            key={face}
+            type="button"
+            className={`segmented__option${side === face ? ' is-selected' : ''}`}
+            aria-pressed={side === face}
+            onClick={() => setSide(face)}
+          >
+            {side === face && (
+              <motion.span
+                layoutId={`face-${tag.id}`}
+                className="segmented__active"
+                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+              />
+            )}
+            <span className="segmented__text">{face === 'front' ? 'Front' : 'Back'}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
