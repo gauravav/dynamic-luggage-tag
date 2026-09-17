@@ -155,6 +155,12 @@ export function Field({
           <button
             type="button"
             className="password-field__toggle"
+            // Toggling visibility must not take the caret out of the
+            // field: you are usually mid-password when you reach for it, and
+            // being dropped back to the start of the form is a real cost. It
+            // is also what the illustration reads to decide whether you are
+            // still in the password field at all.
+            onMouseDown={(event) => event.preventDefault()}
             onClick={onRevealToggle}
             aria-label={revealed ? 'Hide password' : 'Show password'}
             aria-pressed={revealed}

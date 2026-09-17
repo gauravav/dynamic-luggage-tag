@@ -1,0 +1,7 @@
+# Playwright
+test-results/
+playwright-report/
+# The signed-in session the browser suite reuses between runs.
+tests/e2e/.auth/
+# Screenshots the suite captures for eyeballing; regenerated on every run.
+tests/e2e/__screenshots__/

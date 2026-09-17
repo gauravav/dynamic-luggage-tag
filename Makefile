@@ -11,10 +11,10 @@ ALEMBIC := api/.venv/bin/alembic
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv deps db-up db-down db-destroy db-psql db-logs migrate \
-        migration dev api web test lint check purge secrets-check clean deploy
+        migration dev api web test e2e lint check purge secrets-check clean deploy
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 setup: venv deps db-up migrate ## Full first-time setup
@@ -82,3 +82,6 @@ clean: ## Remove build artefacts (keeps data and secrets)
 
 deploy: ## Deploy: pull, install deps, migrate, build web, restart the service
 	@./infra/scripts/deploy.sh
+
+e2e: ## Run the browser tests (starts its own API and web server)
+	@./infra/scripts/e2e.sh
