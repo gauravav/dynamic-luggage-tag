@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { ResendVerification } from '../components/ResendVerification'
 import { AnimatePresence, motion } from 'motion/react'
+import { LuggageMole, type MoleState } from '../components/LuggageMole'
 import { BusyLabel } from '../components/motion'
 import { Field, Notice } from '../components/ui'
 import { useTurnstile } from '../lib/turnstile'
@@ -24,6 +25,25 @@ export function Login() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const [focused, setFocused] = useState<'email' | 'password' | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+
+  // What the mole does about all this. Reading the address is the only thing
+  // it is allowed to watch; a password it covers its eyes for, unless you have
+  // said out loud that you want it shown.
+  const mole: MoleState =
+    focused === 'password'
+      ? showPassword
+        ? 'peeking'
+        : 'hiding'
+      : focused === 'email'
+        ? 'watching'
+        : 'idle'
+  // Roughly how far along the address it has read. Character count rather than
+  // the caret, so it still tracks when the field is filled by a password
+  // manager rather than typed.
+  const gaze = Math.min(1, email.length / 26)
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -63,7 +83,30 @@ export function Login() {
   return (
     <div className="page wrap wrap--narrow">
       <p className="kicker">sign in</p>
-      <h1 style={{ fontSize: 28, marginBottom: 20 }}>Welcome back.</h1>
+      <h1 style={{ fontSize: 28, marginBottom: 14 }}>Welcome back.</h1>
+
+      <LuggageMole state={mole} gaze={gaze} className="mole mole--signin" />
+      <p className="faint center" style={{ marginBottom: 20 }} aria-hidden="true">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={mole}
+            style={{ display: 'inline-block' }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.16 }}
+          >
+            {
+              {
+                idle: 'Ready when you are.',
+                watching: 'Reading along…',
+                hiding: 'Not looking.',
+                peeking: 'Only because you asked.',
+              }[mole]
+            }
+          </motion.span>
+        </AnimatePresence>
+      </p>
 
       {message && (
         <Notice>
@@ -81,6 +124,8 @@ export function Login() {
           type="email"
           value={email}
           onChange={setEmail}
+          onFocus={() => setFocused('email')}
+          onBlur={() => setFocused(null)}
           autoComplete="email"
           required
           disabled={needsSecondFactor}
@@ -91,6 +136,10 @@ export function Login() {
           type="password"
           value={password}
           onChange={setPassword}
+          onFocus={() => setFocused('password')}
+          onBlur={() => setFocused(null)}
+          revealed={showPassword}
+          onRevealToggle={() => setShowPassword((previous) => !previous)}
           autoComplete="current-password"
           required
           disabled={needsSecondFactor}
