@@ -33,7 +33,7 @@ from ..schemas import (
     TotpEnableIn,
     parse,
 )
-from ..security import audit
+from ..security import audit, turnstile
 from ..security import sessions as session_service
 from ..security.authz import current_session, login_required, require_user, user_crypto
 from ..security.crypto import DecryptionError, decrypt_field, encrypt_field, field_aad
@@ -88,6 +88,7 @@ def _public_url(path: str) -> str:
 
 @bp.post("/register")
 @limiter.limit("5 per hour; 20 per day")
+@turnstile.require("register")
 def register():
     payload = parse(request, RegisterIn)
     config = app_config()
@@ -202,6 +203,7 @@ def verify_email():
 
 @bp.post("/verify-email/resend")
 @limiter.limit("10 per hour; 30 per day")
+@turnstile.require("resend_verification")
 def resend_verification():
     """Issues a fresh confirmation link for an unverified account.
 
@@ -260,6 +262,7 @@ def resend_verification():
 
 @bp.post("/login")
 @limiter.limit("10 per 15 minutes; 50 per day")
+@turnstile.require("login")
 def login():
     payload = parse(request, LoginIn)
     config = app_config()
@@ -552,6 +555,7 @@ def change_password():
 
 @bp.post("/password/reset-request")
 @limiter.limit("5 per hour; 15 per day")
+@turnstile.require("password_reset")
 def request_password_reset():
     payload = parse(request, PasswordResetRequestIn)
     config = app_config()

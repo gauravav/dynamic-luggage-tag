@@ -68,6 +68,12 @@ interface RequestOptions {
   method?: string
   body?: unknown
   signal?: AbortSignal
+  /** A Cloudflare Turnstile token, for the endpoints that require one. */
+  turnstileToken?: string | null
+}
+
+export interface SendOptions {
+  turnstileToken?: string | null
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -80,6 +86,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (!SAFE_METHODS.has(method)) {
     const token = csrfToken()
     if (token) headers[CSRF_HEADER] = token
+  }
+  if (options.turnstileToken) {
+    headers['X-Turnstile-Token'] = options.turnstileToken
   }
 
   let response: Response
@@ -116,7 +125,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export const api = {
   get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
+  post: <T>(path: string, body?: unknown, options: SendOptions = {}) =>
+    request<T>(path, { method: 'POST', body, ...options }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body }),
 }

@@ -15,6 +15,7 @@ import { useParams } from 'react-router-dom'
 import { ApiError, api, type ScanPage as ScanPageData } from '../api/client'
 import { TagArt } from '../components/TagArt'
 import { Field, Notice, Spinner } from '../components/ui'
+import { useTurnstile } from '../lib/turnstile'
 
 export function ScanPage() {
   const { token } = useParams<{ token: string }>()
@@ -224,6 +225,10 @@ function MessageForm({ token }: { token: string }) {
   const [emailed, setEmailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Called before the early return below: hooks must run in the same order on
+  // every render. Only this form loads Turnstile — viewing the page, recording
+  // the scan and sharing a city never touch Cloudflare.
+  const turnstile = useTurnstile('finder_message')
 
   if (relayToken) {
     return (
@@ -251,6 +256,7 @@ function MessageForm({ token }: { token: string }) {
       const response = await api.post<{ relay_token: string; email_updates: boolean }>(
         `/scan/${encodeURIComponent(token)}/message`,
         { body: body.trim(), contact: contact.trim() || null, email: email.trim() || null },
+        { turnstileToken: turnstile.token },
       )
       setEmailed(response.email_updates)
       setRelayToken(response.relay_token)
@@ -258,6 +264,7 @@ function MessageForm({ token }: { token: string }) {
       setError(cause instanceof ApiError ? cause.message : 'Could not send that message.')
     } finally {
       setBusy(false)
+      turnstile.reset()
     }
   }
 
@@ -298,7 +305,13 @@ function MessageForm({ token }: { token: string }) {
           maxLength={120}
           hint="Shown to the owner. Only if you want to. Leave it blank and the conversation stays entirely inside this app."
         />
-        <button type="submit" className="btn btn--danger" disabled={busy || !body.trim()}>
+        {turnstile.widget}
+        {turnstile.loadError && <Notice>{turnstile.loadError}</Notice>}
+        <button
+          type="submit"
+          className="btn btn--danger"
+          disabled={busy || !body.trim() || !turnstile.ready}
+        >
           {busy ? 'Sending…' : 'Send message'}
         </button>
       </form>

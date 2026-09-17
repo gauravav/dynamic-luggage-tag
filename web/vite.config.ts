@@ -25,14 +25,20 @@ function csp(): Plugin {
     "base-uri 'none'",
     "form-action 'self'",
     "object-src 'none'",
+    // Cloudflare Turnstile renders its check in an iframe from this origin.
+    "frame-src https://challenges.cloudflare.com",
   ]
   const development = [
     ...shared,
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
     // Some browsers do not treat 'self' as covering ws: on the same origin.
     "connect-src 'self' ws://localhost:* ws://127.0.0.1:*",
   ].join('; ')
-  const production = [...shared, "script-src 'self'", "connect-src 'self'"].join('; ')
+  const production = [
+    ...shared,
+    "script-src 'self' https://challenges.cloudflare.com",
+    "connect-src 'self'",
+  ].join('; ')
 
   const apply = (policy: string) => (server: { middlewares: Connect }) => {
     server.middlewares.use((_request, response, next) => {

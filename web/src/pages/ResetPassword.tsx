@@ -2,24 +2,40 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, api } from '../api/client'
 import { Field, Notice } from '../components/ui'
+import { useTurnstile } from '../lib/turnstile'
 
 export function ResetRequest() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const turnstile = useTurnstile('password_reset')
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     setBusy(true)
+    setMessage(null)
     try {
-      await api.post('/auth/password/reset-request', { email })
-    } catch {
-      // Swallowed on purpose. The endpoint answers identically for known and
-      // unknown addresses; surfacing an error here would hand back exactly the
-      // signal that design removes.
-    } finally {
+      await api.post('/auth/password/reset-request', { email }, { turnstileToken: turnstile.token })
       setSent(true)
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.code === 'verification_failed' || error.code === 'verification_unavailable')
+      ) {
+        // The request never reached the account lookup, so saying so reveals
+        // nothing about the address — and claiming a link was sent would be
+        // untrue.
+        setMessage(error.message)
+      } else {
+        // Anything else is swallowed on purpose. The endpoint answers
+        // identically for known and unknown addresses; surfacing an error here
+        // would hand back exactly the signal that design removes.
+        setSent(true)
+      }
+    } finally {
       setBusy(false)
+      turnstile.reset()
     }
   }
 
@@ -52,7 +68,14 @@ export function ResetRequest() {
           autoComplete="email"
           required
         />
-        <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
+        {message && <Notice>{message}</Notice>}
+        {turnstile.widget}
+        {turnstile.loadError && <Notice>{turnstile.loadError}</Notice>}
+        <button
+          type="submit"
+          className="btn btn--primary btn--block"
+          disabled={busy || !turnstile.ready}
+        >
           {busy ? 'Sending…' : 'Send reset link'}
         </button>
       </form>

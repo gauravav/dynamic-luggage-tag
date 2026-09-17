@@ -102,6 +102,17 @@ class Config:
 
     max_content_length: int = 64 * 1024
 
+    # Cloudflare Turnstile. Off unless both keys are set, so a self-hosted
+    # instance without a Cloudflare account keeps working unchanged.
+    turnstile_site_key: str | None = None
+    turnstile_secret_key: str | None = field(repr=False, default=None)
+    turnstile_verify_url: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    turnstile_timeout_seconds: float = 5.0
+
+    @property
+    def turnstile_enabled(self) -> bool:
+        return bool(self.turnstile_site_key and self.turnstile_secret_key)
+
     @property
     def active_kek(self) -> bytes:
         try:
@@ -186,6 +197,19 @@ def load_config(overrides: dict | None = None) -> Config:
         ratelimit_storage_uri=os.environ.get("DLT_RATELIMIT_STORAGE_URI", "memory://"),
         trusted_proxy_hops=_int("DLT_TRUSTED_PROXY_HOPS", 0),
         max_content_length=_int("DLT_MAX_CONTENT_LENGTH", 64 * 1024),
+        turnstile_site_key=overrides.get(
+            "turnstile_site_key", os.environ.get("DLT_TURNSTILE_SITE_KEY") or None
+        ),
+        turnstile_secret_key=overrides.get(
+            "turnstile_secret_key", os.environ.get("DLT_TURNSTILE_SECRET_KEY") or None
+        ),
+        turnstile_verify_url=overrides.get(
+            "turnstile_verify_url",
+            os.environ.get(
+                "DLT_TURNSTILE_VERIFY_URL",
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            ),
+        ),
     )
 
     if cfg.is_production:
@@ -195,4 +219,10 @@ def load_config(overrides: dict | None = None) -> Config:
             raise ConfigError("DLT_PUBLIC_BASE_URL must be https:// in production")
         if "sslmode=" not in cfg.database_url:
             raise ConfigError("DATABASE_URL must specify sslmode in production")
+    if bool(cfg.turnstile_site_key) != bool(cfg.turnstile_secret_key):
+        # One key without the other would render a widget the server never
+        # checks, or check tokens no page can produce. Both are silent failures.
+        raise ConfigError(
+            "Set both DLT_TURNSTILE_SITE_KEY and DLT_TURNSTILE_SECRET_KEY, or neither"
+        )
     return cfg

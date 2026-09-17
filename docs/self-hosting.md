@@ -72,6 +72,7 @@ development values. The ones that matter most:
 | `DLT_RELAY_RETENTION_DAYS` | How long a finder conversation stays open. Default 30. |
 | `DLT_MAIL_PROVIDER` | `console` or `smtp`. |
 | `DLT_GEO_PROVIDER` | `null` or `header`. |
+| `DLT_TURNSTILE_SITE_KEY`, `DLT_TURNSTILE_SECRET_KEY` | Cloudflare Turnstile bot protection. Set both or neither. See below. |
 
 ### Trusted proxy hops
 
@@ -84,6 +85,48 @@ right, so the client address is read by counting entries from the right. Set
   every request appears to come from the balancer.
 - **1** — one reverse proxy or CDN in front.
 - **Too high** — lets a client spoof its own address by prepending entries.
+
+### Bot protection (Cloudflare Turnstile)
+
+Rate limits slow a script down; they don't tell a person from a script.
+Turnstile does, usually without asking the visitor to do anything.
+
+When both keys are set, the API requires a valid Turnstile token on:
+
+- creating an account
+- signing in (including the two-factor code step)
+- requesting a password reset
+- resending a confirmation link
+- sending a message to a bag's owner
+
+It is deliberately **not** required to view a scan page, record a scan, or
+share a city. Those carry no free text to spam, and gating them would send
+every stranger who scans a bag to Cloudflare before they've chosen to do
+anything. The widget, and Cloudflare's script, only load on a page with one of
+the forms above.
+
+To turn it on:
+
+1. In the Cloudflare dashboard, open **Turnstile** and add a widget. Add your
+   site's hostname. **Managed** mode is the right default.
+2. Set `DLT_TURNSTILE_SITE_KEY` and `DLT_TURNSTILE_SECRET_KEY` on the API and
+   restart it. The frontend reads the site key from `GET /api/v1/config`, so
+   there is nothing to rebuild.
+3. Add `https://challenges.cloudflare.com` to `script-src` and `frame-src` in
+   the Content-Security-Policy your web server sends (the snippet under
+   *Security headers in production* already includes it). **Without this the
+   widget is silently blocked and nobody can sign in.**
+
+Behaviour worth knowing:
+
+- Each token is single-use and tied to its form: a token solved on the sign-in
+  page is rejected by registration.
+- If Cloudflare can't be reached, the protected actions fail with "try again"
+  rather than going through unchecked.
+- The API does not send the visitor's IP address to Cloudflare when verifying.
+- Cloudflare's test keys (site `1x00000000000000000000AA`, secret
+  `1x0000000000000000000000000000000AA`) let you check the setup end to end;
+  the widget shows a red "For testing only" strip while they're in use.
 
 ### Geolocation
 
@@ -166,7 +209,7 @@ The dev and preview servers set the Content-Security-Policy themselves (see
 static host, that plugin is not in the path — send the header yourself:
 
 ```nginx
-add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;
 add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;

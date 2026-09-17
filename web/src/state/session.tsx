@@ -22,7 +22,12 @@ interface SessionState {
   user: User | null
   loading: boolean
   refresh: () => Promise<void>
-  signIn: (email: string, password: string, codes?: TwoFactor) => Promise<SignInResult>
+  signIn: (
+    email: string,
+    password: string,
+    codes?: TwoFactor,
+    turnstileToken?: string | null,
+  ) => Promise<SignInResult>
   signOut: () => Promise<void>
   setUser: (user: User | null) => void
 }
@@ -57,13 +62,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [refresh])
 
-  const signIn = useCallback<SessionState['signIn']>(async (email, password, codes) => {
+  const signIn = useCallback<SessionState['signIn']>(async (email, password, codes, turnstileToken) => {
     const body = await api.post<{ user?: User; status?: string }>('/auth/login', {
       email,
       password,
       ...(codes?.totpCode ? { totp_code: codes.totpCode } : {}),
       ...(codes?.recoveryCode ? { recovery_code: codes.recoveryCode } : {}),
-    })
+    }, { turnstileToken })
     if (body.status === 'totp_required') return { status: 'totp_required' }
     setUser(body.user ?? null)
     return { status: 'signed_in' }

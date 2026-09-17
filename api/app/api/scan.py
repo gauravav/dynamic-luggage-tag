@@ -26,7 +26,7 @@ from ..errors import ApiError
 from ..extensions import app_config, db_session, keyring, limiter
 from ..models import TAG_STATUS_LOST, RelayMessage, RelayThread, ScanEvent, Tag, User, utcnow
 from ..schemas import FinderMessageIn, ScanLocationIn, parse
-from ..security import audit
+from ..security import audit, turnstile
 from ..security.crypto import DecryptionError, hash_token, new_token
 from ..security.pii import unlock
 from ..security.privacy import client_ip, client_label, hash_ip
@@ -245,6 +245,7 @@ def share_location(token: str):
 
 @bp.post("/<token>/message")
 @limiter.limit("5 per hour; 15 per day")
+@turnstile.require("finder_message")
 def send_message(token: str):
     """Opens a masked conversation with the owner.
 

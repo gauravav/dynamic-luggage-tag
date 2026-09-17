@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../api/client'
 import { Field, Notice } from '../components/ui'
+import { useTurnstile } from '../lib/turnstile'
 
 export function Register() {
   const [email, setEmail] = useState('')
@@ -11,6 +12,7 @@ export function Register() {
   const [message, setMessage] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
+  const turnstile = useTurnstile('register')
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -18,7 +20,11 @@ export function Register() {
     setErrors({})
     setMessage(null)
     try {
-      await api.post('/auth/register', { email, password, name: name || null })
+      await api.post(
+        '/auth/register',
+        { email, password, name: name || null },
+        { turnstileToken: turnstile.token },
+      )
       // The same screen appears whether or not the address was already
       // registered — the API answers identically by design, so the UI must not
       // invent a distinction the server deliberately refuses to make.
@@ -32,6 +38,8 @@ export function Register() {
       }
     } finally {
       setBusy(false)
+      // Tokens are single-use; a retry needs a fresh check.
+      turnstile.reset()
     }
   }
 
@@ -97,7 +105,13 @@ export function Register() {
           autoComplete="new-password"
           required
         />
-        <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
+        {turnstile.widget}
+        {turnstile.loadError && <Notice>{turnstile.loadError}</Notice>}
+        <button
+          type="submit"
+          className="btn btn--primary btn--block"
+          disabled={busy || !turnstile.ready}
+        >
           {busy ? 'Creating…' : 'Create account'}
         </button>
       </form>

@@ -77,7 +77,9 @@ def register_cors(app: Flask, config: Config) -> None:
         if origin and origin.rstrip("/") in allowed:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token"
+            response.headers["Access-Control-Allow-Headers"] = (
+                "Content-Type, X-CSRF-Token, X-Turnstile-Token"
+            )
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
             response.headers["Access-Control-Max-Age"] = "600"
             response.headers["Access-Control-Expose-Headers"] = "X-Request-Id"

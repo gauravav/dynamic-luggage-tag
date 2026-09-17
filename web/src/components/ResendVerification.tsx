@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api } from '../api/client'
+import { useTurnstile } from '../lib/turnstile'
 
 const STORAGE_KEY = 'dlt.verification_resend_after'
 
@@ -48,6 +49,7 @@ export function ResendVerification({ email }: { email: string }) {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const turnstile = useTurnstile('resend_verification')
 
   const remaining = deadline - now
 
@@ -64,6 +66,7 @@ export function ResendVerification({ email }: { email: string }) {
       const body = await api.post<{ retry_after_seconds?: number }>(
         '/auth/verify-email/resend',
         { email },
+        { turnstileToken: turnstile.token },
       )
       const wait = (body.retry_after_seconds ?? 600) * 1000
       const until = Date.now() + wait
@@ -79,8 +82,9 @@ export function ResendVerification({ email }: { email: string }) {
       )
     } finally {
       setBusy(false)
+      turnstile.reset()
     }
-  }, [email])
+  }, [email, turnstile])
 
   return (
     <div style={{ marginTop: 4 }}>
@@ -100,15 +104,23 @@ export function ResendVerification({ email }: { email: string }) {
           You can request another link in {formatRemaining(remaining)}.
         </p>
       ) : (
+        <>
+          {turnstile.widget}
+          {turnstile.loadError && (
+            <p className="field__error" style={{ marginBottom: 6 }}>
+              {turnstile.loadError}
+            </p>
+          )}
         <button
           type="button"
           className="btn btn--quiet btn--sm"
           style={{ padding: 0 }}
           onClick={resend}
-          disabled={busy || !email}
+          disabled={busy || !email || !turnstile.ready}
         >
           {busy ? 'Sending…' : 'Resend the confirmation link'}
         </button>
+        </>
       )}
     </div>
   )

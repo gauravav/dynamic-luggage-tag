@@ -18,6 +18,7 @@ without making the tag useless.
 |---|---|---|
 | A stranger who scans a tag | The public scan page | Marked safe, the page contains no personal data at all. Marked lost, it contains only the fields the owner opted into — never the address. |
 | Someone who steals a database dump | Every table | Personal fields are AES-256-GCM ciphertext under per-user data keys, which are themselves sealed by a key that lives only in the environment. Session, scan and relay tokens are stored as HMACs, so none of them can be replayed. |
+| Scripts creating accounts, stuffing credentials or spamming owners | Sign-up, sign-in, reset, resend, finder messages | Per-client rate limits everywhere; Cloudflare Turnstile on these actions when configured, with each token single-use and bound to its action. Viewing a scan page is never gated. |
 | Someone guessing scan URLs | The scan endpoint | Tokens are 256 bits of CSPRNG output. Endpoints are rate-limited per hashed client. |
 | Someone trying to learn who has an account | Registration, sign-in, password reset | All three answer identically for known and unknown addresses, and the fast paths burn an equivalent Argon2 verification so response timing does not answer the question either. |
 | A malicious website the owner visits | The owner's session | Session cookies are `HttpOnly`, `Secure`, `SameSite=Strict` and `__Host-` prefixed, plus an Origin check and a double-submit CSRF token. |

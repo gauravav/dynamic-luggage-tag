@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { ResendVerification } from '../components/ResendVerification'
 import { Field, Notice } from '../components/ui'
+import { useTurnstile } from '../lib/turnstile'
 import { useSession } from '../state/session'
 
 export function Login() {
   const { signIn } = useSession()
+  const turnstile = useTurnstile('login')
   const navigate = useNavigate()
   const location = useLocation()
   const from = (location.state as { from?: string } | null)?.from ?? '/app'
@@ -27,10 +29,15 @@ export function Login() {
     setMessage(null)
     setErrorCode(null)
     try {
-      const result = await signIn(email, password, {
-        ...(totpCode ? { totpCode } : {}),
-        ...(recoveryCode ? { recoveryCode } : {}),
-      })
+      const result = await signIn(
+        email,
+        password,
+        {
+          ...(totpCode ? { totpCode } : {}),
+          ...(recoveryCode ? { recoveryCode } : {}),
+        },
+        turnstile.token,
+      )
       if (result.status === 'totp_required') {
         setNeedsSecondFactor(true)
         return
@@ -45,6 +52,9 @@ export function Login() {
       setRecoveryCode('')
     } finally {
       setBusy(false)
+      // Every attempt spends the token, including the password step before a
+      // two-factor prompt, so the code step gets a fresh check.
+      turnstile.reset()
     }
   }
 
@@ -119,10 +129,12 @@ export function Login() {
           </>
         )}
 
+        {turnstile.widget}
+        {turnstile.loadError && <Notice>{turnstile.loadError}</Notice>}
         <button
           type="submit"
           className="btn btn--primary btn--block"
-          disabled={busy}
+          disabled={busy || !turnstile.ready}
           style={{ marginTop: 12 }}
         >
           {busy ? 'Signing in…' : 'Sign in'}
