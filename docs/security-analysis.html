@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#FAF6EC">
+<title>Security &amp; privacy analysis — Dynamic Luggage Tag</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf6ec; --paper-deep: #f0e7d2; --paper-line: #dcd0af;
+    --ink: #242017; --ink-soft: #5b5748; --ink-faint: #8b8676;
+    --forest: #2f5d4e; --forest-deep: #1f4034; --forest-wash: #e4efea;
+    --brick: #9c3b2a; --brick-deep: #7c2e20; --brick-wash: #f5e1dc;
+    --brass: #8c6221; --brass-wash: #f6efde;
+    --white: #fff;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.65 var(--sans); }
+  a { color: var(--forest-deep); }
+  h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; line-height: 1.2; margin: 0; }
+
+  .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1280px; margin: 0 auto; }
+  nav.toc {
+    position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+    padding: 28px 18px 40px 24px; border-right: 1px solid var(--paper-line);
+  }
+  .toc .brand { font-family: var(--serif); font-weight: 600; font-size: 16px; display: flex; gap: 9px; align-items: center; margin-bottom: 4px; text-decoration: none; color: var(--ink); }
+  .toc .mark { width: 18px; height: 23px; border-radius: 3px; border: 1px solid var(--paper-line);
+    background: repeating-linear-gradient(135deg, var(--forest) 0 3px, transparent 3px 7px), var(--paper-deep); }
+  .toc .sub { font: 500 11.5px var(--mono); color: var(--brass); margin: 0 0 20px 27px; }
+  .toc h4 { font: 500 12px var(--mono); color: var(--brass); text-transform: lowercase; margin: 20px 0 6px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+  .toc li a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: 14px; }
+  .toc li a:hover { background: var(--paper-deep); color: var(--ink); }
+
+  main { padding: 44px 40px 110px; min-width: 0; }
+  .kicker { font: 500 13px var(--mono); color: var(--brass); margin-bottom: 10px; }
+  header.intro h1 { font-size: clamp(28px, 4vw, 42px); margin-bottom: 14px; }
+  .lede { font-size: 18px; color: var(--ink-soft); max-width: 68ch; }
+
+  .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 28px 0 8px; }
+  .meta div { background: var(--white); border: 1px solid var(--paper-line); border-radius: 10px; padding: 12px 14px; }
+  .meta dt { font: 500 11.5px var(--mono); color: var(--brass); text-transform: lowercase; }
+  .meta dd { margin: 3px 0 0; font-size: 14.5px; color: var(--ink); }
+
+  section { margin-top: 56px; padding-top: 26px; border-top: 1px solid var(--paper-line); }
+  section > h2 { font-size: clamp(22px, 2.6vw, 28px); margin-bottom: 8px; }
+  section > h2 .n { font: 500 14px var(--mono); color: var(--brass); margin-right: 10px; vertical-align: 3px; }
+  section > p, section > ul, section > ol { max-width: 74ch; color: var(--ink-soft); }
+  section h3 { font-size: 19px; margin: 32px 0 8px; color: var(--ink); }
+  section h4 { font-size: 16px; margin: 22px 0 6px; color: var(--ink); }
+  strong { color: var(--ink); font-weight: 600; }
+  ul, ol { padding-left: 22px; }
+  li { margin-bottom: 7px; }
+
+  pre {
+    background: #221f19; color: #e8e2d2; border-radius: 10px; padding: 16px 18px;
+    overflow-x: auto; font: 13px/1.6 var(--mono); margin: 14px 0;
+  }
+  pre .c { color: #9a9484; }
+  code { font: 0.92em var(--mono); background: var(--paper-deep); padding: 1px 5px; border-radius: 4px; }
+  pre code { background: none; padding: 0; font-size: 13px; }
+  .src { font: 500 11.5px var(--mono); color: var(--ink-faint); display: block; margin: 14px 0 -6px; }
+
+  figure { margin: 22px 0; }
+  figure img {
+    display: block; max-width: 100%; height: auto; border: 1px solid var(--paper-line);
+    border-radius: 10px; background: var(--white);
+  }
+  figure.narrow img { max-width: 420px; }
+  figcaption { font-size: 13.5px; color: var(--ink-faint); margin-top: 8px; max-width: 64ch; }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+  .pair figure { margin: 0; }
+
+  table { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--paper-line); vertical-align: top; }
+  th { font: 500 12px var(--mono); color: var(--brass); text-transform: lowercase; }
+  td { color: var(--ink-soft); }
+  td strong { color: var(--ink); }
+
+  .sev { font: 500 11.5px var(--mono); padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+  .sev.med { background: var(--brick-wash); color: var(--brick-deep); }
+  .sev.low { background: var(--brass-wash); color: var(--brass); }
+  .sev.info { background: var(--paper-deep); color: var(--ink-soft); }
+  .sev.ok { background: var(--forest-wash); color: var(--forest-deep); }
+
+  .finding {
+    background: var(--white); border: 1px solid var(--paper-line); border-left: 3px solid var(--brass);
+    border-radius: 10px; padding: 18px 20px; margin: 22px 0;
+  }
+  .finding.med { border-left-color: var(--brick); }
+  .finding.info { border-left-color: var(--ink-faint); }
+  .finding h3 { margin: 0 0 4px; font-size: 18px; }
+  .finding .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .finding p { color: var(--ink-soft); max-width: 72ch; }
+  .finding p:last-child { margin-bottom: 0; }
+  .finding .fix { border-top: 1px dashed var(--paper-line); margin-top: 14px; padding-top: 12px; }
+  .finding .fix strong { color: var(--forest-deep); }
+
+  .note {
+    background: var(--forest-wash); border: 1px solid #c5dbd2; border-radius: 10px;
+    padding: 14px 18px; margin: 20px 0; color: var(--forest-deep); font-size: 15px; max-width: 74ch;
+  }
+  .note.warn { background: var(--brass-wash); border-color: #e3d4ab; color: var(--brass); }
+
+  footer { margin-top: 70px; padding-top: 22px; border-top: 1px solid var(--paper-line); font-size: 13.5px; color: var(--ink-faint); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--paper-line); }
+    main { padding: 28px 20px 70px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <a class="brand" href="index.html"><span class="mark"></span> Dynamic Luggage Tag</a>
+  <p class="sub">security analysis</p>
+  <h4>overview</h4>
+  <ol>
+    <li><a href="#scope">Scope &amp; method</a></li>
+    <li><a href="#summary">Findings at a glance</a></li>
+    <li><a href="#threat">Threat model</a></li>
+  </ol>
+  <h4>analysis</h4>
+  <ol>
+    <li><a href="#rest">1 · Data at rest</a></li>
+    <li><a href="#auth">2 · Authentication</a></li>
+    <li><a href="#session">3 · Sessions &amp; CSRF</a></li>
+    <li><a href="#api">4 · API security</a></li>
+    <li><a href="#public">5 · The public surface</a></li>
+    <li><a href="#privacy">6 · Privacy</a></li>
+  </ol>
+  <h4>findings</h4>
+  <ol>
+    <li><a href="#f1">F-1 TOTP replay</a></li>
+    <li><a href="#f2">F-2 Rate-limit store</a></li>
+    <li><a href="#f3">F-3 Proxy hops</a></li>
+    <li><a href="#f4">F-4 Google Fonts</a></li>
+    <li><a href="#f5">F-5 Recovery-code cost</a></li>
+    <li><a href="#f6">F-6 Inline styles</a></li>
+    <li><a href="#f7">F-7 Server header</a></li>
+    <li><a href="#f8">F-8 Rate-limit headers</a></li>
+    <li><a href="#f9">F-9 Audit coverage</a></li>
+  </ol>
+  <h4>closing</h4>
+  <ol>
+    <li><a href="#residual">Residual risk</a></li>
+    <li><a href="#verify">Verify it yourself</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="intro">
+  <p class="kicker">security · privacy · api</p>
+  <h1>Security and privacy analysis</h1>
+  <p class="lede">
+    A review of what this application protects, how it protects it, and where it
+    falls short. Written to be checkable: every claim below points at the code
+    that implements it, and the weaknesses are stated as plainly as the
+    strengths.
+  </p>
+  <dl class="meta">
+    <div><dt>subject</dt><dd>Dynamic Luggage Tag</dd></div>
+    <div><dt>revision</dt><dd><code>5de265a</code></dd></div>
+    <div><dt>date</dt><dd>17 September 2026</dd></div>
+    <div><dt>findings</dt><dd>0 high · 2 medium · 5 low · 2 informational</dd></div>
+  </dl>
+</header>
+
+<section id="scope">
+  <h2><span class="n">§</span>Scope &amp; method</h2>
+  <p>
+    This covers the application in this repository: the Flask API under
+    <code>api/</code>, the React client under <code>web/</code>, and the
+    deployment shape described in <a href="self-hosting.md">self-hosting.md</a>.
+    It does not cover the host operating system, the TLS terminator you put in
+    front of it, your database backups, or the physical security of a printed
+    tag.
+  </p>
+  <p>
+    The method was a read of every module under <code>api/app/security/</code>,
+    <code>api/app/api/</code> and <code>api/app/services/</code>, followed by
+    behavioural checks against a running instance — response headers taken off
+    the wire, a TOTP code replayed, the <code>Server</code> header compared
+    between the development server and gunicorn. Where a finding below is
+    behavioural, the evidence is reproduced verbatim.
+  </p>
+  <div class="note">
+    <strong>On the absence of high-severity findings.</strong> That is a
+    statement about this review, not a guarantee. No fuzzing, no dependency
+    audit, no authenticated penetration test and no review of the container or
+    host was performed. The most likely place for a serious problem is the part
+    nobody has looked at, and several such parts are named under
+    <a href="#residual">residual risk</a>.
+  </div>
+</section>
+
+<section id="summary">
+  <h2><span class="n">§</span>Findings at a glance</h2>
+  <table>
+    <thead>
+      <tr><th>id</th><th>finding</th><th>area</th><th>severity</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="#f1">F-1</a></td><td>A TOTP code can be replayed inside its validity window</td><td>Authentication</td><td><span class="sev low">Low</span></td></tr>
+      <tr><td><a href="#f2">F-2</a></td><td>Rate limiting defaults to per-process memory</td><td>API</td><td><span class="sev med">Medium</span></td></tr>
+      <tr><td><a href="#f3">F-3</a></td><td>A misconfigured proxy-hop count silently collapses per-client limits</td><td>API</td><td><span class="sev med">Medium</span></td></tr>
+      <tr><td><a href="#f4">F-4</a></td><td>Every page load discloses the visitor to Google Fonts</td><td>Privacy</td><td><span class="sev low">Low</span></td></tr>
+      <tr><td><a href="#f5">F-5</a></td><td>One recovery-code attempt costs ten Argon2 verifications</td><td>Authentication</td><td><span class="sev low">Low</span></td></tr>
+      <tr><td><a href="#f6">F-6</a></td><td>The client CSP permits inline styles</td><td>Client</td><td><span class="sev low">Low</span></td></tr>
+      <tr><td><a href="#f7">F-7</a></td><td><code>Server</code> masking has no effect under gunicorn</td><td>API</td><td><span class="sev info">Info</span></td></tr>
+      <tr><td><a href="#f8">F-8</a></td><td>Rate-limit headers publish the limit configuration</td><td>API</td><td><span class="sev info">Info</span></td></tr>
+      <tr><td><a href="#f9">F-9</a></td><td>The audit trail does not cover every decryption the README claims</td><td>Privacy</td><td><span class="sev low">Low</span></td></tr>
+    </tbody>
+  </table>
+  <p>
+    Nothing in this list undermines the product's central privacy claim: that a
+    stranger who scans a bag learns nothing about its owner until the owner
+    decides otherwise. That mechanism is examined in
+    <a href="#public">§5</a> and holds.
+  </p>
+</section>
+
+<section id="threat">
+  <h2><span class="n">§</span>Threat model</h2>
+  <p>The design answers to five adversaries, in roughly the order it takes them seriously.</p>
+  <table>
+    <thead><tr><th>adversary</th><th>wants</th><th>principal defence</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>A stranger holding the bag</strong></td>
+        <td>Name, address, phone — the classic luggage-tag exposure</td>
+        <td>Nothing personal is served until the owner marks the bag lost, and the address never at all</td>
+      </tr>
+      <tr>
+        <td><strong>Someone who photographs a tag</strong></td>
+        <td>To track the bag, or reach the owner later</td>
+        <td>The QR carries a random 256-bit token and nothing else; the owner can rotate it</td>
+      </tr>
+      <tr>
+        <td><strong>Whoever obtains a database dump</strong></td>
+        <td>Bulk personal data</td>
+        <td>Per-user envelope encryption; without the environment's key the dump is inert</td>
+      </tr>
+      <tr>
+        <td><strong>A credential-stuffing bot</strong></td>
+        <td>Accounts</td>
+        <td>Argon2id, lockout, enumeration-resistant responses, rate limits, optional Turnstile</td>
+      </tr>
+      <tr>
+        <td><strong>The operator</strong></td>
+        <td>(assumed honest, but should be able to prove it)</td>
+        <td>Audit log of every decryption; retention windows; crypto-shredding on deletion</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    The model explicitly does <em>not</em> defend against an attacker who holds
+    both the database and the process environment at the same time. That is the
+    line the whole encryption design is drawn around, and it is stated honestly
+    in the code rather than glossed over.
+  </p>
+</section>
+
+<section id="rest">
+  <h2><span class="n">§ 1</span>Data at rest</h2>
+
+  <h3>Envelope encryption, per user</h3>
+  <p>
+    Each user row carries its own 256-bit data-encryption key (DEK). The DEK is
+    stored wrapped by a key-encryption key (KEK) that lives only in the process
+    environment. Personal fields are sealed with the DEK using AES-256-GCM.
+  </p>
+  <p>
+    The consequence worth stating plainly: a stolen database is not a breach of
+    personal data on its own. It is a pile of ciphertext with no key in it.
+  </p>
+
+  <h3>Ciphertext is pinned to its own row and column</h3>
+  <p>
+    Every field is sealed with associated data naming exactly where it lives.
+    Moving a ciphertext — pasting a victim's encrypted phone number into the
+    attacker's own row so the application decrypts it for them — fails
+    authentication rather than succeeding.
+  </p>
+  <span class="src">api/app/security/crypto.py</span>
+<pre><code>def field_aad(table: str, column: str, row_id: object) -> bytes:
+    """Associated data pinning a ciphertext to one column of one row."""
+    return f"{table}:{column}:{row_id}".encode()</code></pre>
+  <p>
+    This is enforced structurally rather than by convention: call sites never
+    touch a key or build their own associated data, because
+    <code>UserCrypto</code> in <code>api/app/security/pii.py</code> is the only
+    way in, and it derives the AAD itself. A developer cannot forget it.
+  </p>
+
+  <h3>Deletion that holds</h3>
+  <p>
+    Account deletion overwrites the wrapped DEK before removing the rows. Any
+    ciphertext surviving in a backup is permanently unreadable — there is no
+    key anywhere that opens it.
+  </p>
+  <span class="src">api/app/services/accounts.py</span>
+<pre><code>def crypto_shred(db: OrmSession, user: User) -> None:
+    """Destroys the user's key material, then the rows themselves."""
+    user.dek_wrapped = b"\x00" * 32
+    user.email_enc = b""
+    ...
+    # Free the unique index so the address can be used to register again.
+    user.email_bidx = crypto.new_key()
+    user.deleted_at = utcnow()
+    db.flush()
+    db.delete(user)</code></pre>
+  <p>
+    Note the blind index is replaced with random bytes rather than nulled. That
+    releases the address for re-registration without leaving a value that could
+    be tested against.
+  </p>
+
+  <h3>Looking up an encrypted column</h3>
+  <p>
+    Sign-in has to find an account by email address, and the address is
+    encrypted. The lookup uses a keyed HMAC — a blind index — so the database
+    holds no plaintext address and an attacker without the index key cannot
+    test guesses offline.
+  </p>
+  <span class="src">api/app/security/crypto.py</span>
+<pre><code>def blind_index(key: bytes, namespace: str, value: str) -> bytes:
+    """Deterministic, keyed index for equality lookups on encrypted columns.
+
+    Keyed so an attacker holding the database cannot test guesses offline, and
+    namespaced so the same value in two columns produces two different indexes.
+    """
+    message = f"{namespace}\x00{value}".encode()
+    return hmac.new(key, message, hashlib.sha256).digest()</code></pre>
+  <p>
+    The residual property of any blind index is that equal plaintexts produce
+    equal indexes: someone holding the database can see that two rows share an
+    address, without learning it. For an email column, where uniqueness is
+    already enforced and visible, that leaks nothing extra.
+  </p>
+
+  <h4>Key rotation</h4>
+  <p>
+    <code>Keyring</code> holds every KEK version, so rows wrapped under an old
+    key stay readable while <code>flask crypto rewrap</code> moves them
+    forward. A rotation is therefore not an outage, which is the main reason
+    rotations get skipped in practice.
+  </p>
+</section>
+
+<section id="auth">
+  <h2><span class="n">§ 2</span>Authentication</h2>
+
+  <h3>Password storage</h3>
+  <p>
+    Argon2id, with cost parameters from configuration (default: 64&nbsp;MiB,
+    3 iterations, parallelism 2). Hashes carry their own parameters, and
+    <code>needs_rehash</code> upgrades a user's hash transparently at their
+    next sign-in — so raising the cost does not strand existing accounts.
+  </p>
+
+  <h3>Enumeration resistance</h3>
+  <p>
+    Registration, sign-in and password reset are all designed not to answer
+    "does this address have an account?". Three separate mechanisms:
+  </p>
+  <ul>
+    <li><strong>In the body.</strong> An unknown address, a wrong password and a locked account all return the same <code>invalid_credentials</code> message.</li>
+    <li><strong>In the timing.</strong> An unknown address still pays for an Argon2 verification against a dummy hash, so latency does not distinguish the cases.</li>
+    <li><strong>In registration.</strong> Registering an address that already exists returns the identical <code>202</code>. What differs is the email sent — and that only reaches the person entitled to know.</li>
+  </ul>
+  <span class="src">api/app/api/auth.py — the unknown-account branch of login</span>
+<pre><code>if user is None:
+    # Spend the same time an existing account would, so response latency
+    # does not answer "does this address have an account?".
+    dummy_verify(hasher)
+    audit.record(db, audit.LOGIN_FAILED, config=config,
+                 actor_type="anonymous", detail={"reason": "unknown_account"})
+    db.commit()
+    raise _invalid_credentials()</code></pre>
+  <p>
+    One subtlety handled correctly: re-registering an <em>unverified</em>
+    address re-sends the verification link but deliberately does not update the
+    stored password. Anyone can type an address they do not own; overwriting
+    the password there would hand them the account the moment the real owner
+    clicked the link in their own inbox.
+  </p>
+
+  <h3>Two-factor</h3>
+  <p>
+    TOTP, enrolled by scanning a QR code. The secret is written on setup but
+    <code>totp_enabled_at</code> stays null until a code proves the
+    authenticator actually holds it — so a mistyped or abandoned setup cannot
+    lock anyone out.
+  </p>
+  <figure class="narrow">
+    <img src="screenshots/sec-totp.png" alt="Two-factor setup: a QR code, with the setup key shown in groups of four beneath it">
+    <figcaption>
+      Enrolment. The provisioning URI is rendered into the response and drawn
+      through a <code>data:</code> URI, never served from a URL of its own —
+      a URI containing the shared secret would otherwise land in an access log,
+      a browser history entry and a referrer header.
+    </figcaption>
+  </figure>
+  <p>
+    Ten single-use recovery codes are issued on enable and shown exactly once.
+    They are stored as Argon2 hashes rather than HMACs, correctly: at roughly
+    48 bits they are short enough that a database leak would otherwise make
+    them brute-forceable.
+  </p>
+  <p>
+    Codes are verified with one step of drift either way, which covers clock
+    skew. See <a href="#f1">F-1</a> for the replay window this leaves open.
+  </p>
+
+  <h3>Lockout</h3>
+  <p>
+    Eight failed attempts locks an account for fifteen minutes, and a failed
+    second factor counts toward the same budget. A locked account returns the
+    same message as a wrong password, so the lockout itself is not an oracle.
+  </p>
+</section>
+
+<section id="session">
+  <h2><span class="n">§ 3</span>Sessions and CSRF</h2>
+
+  <h3>Server-side sessions, not tokens</h3>
+  <p>
+    The cookie is an opaque random string; authority lives in a database row.
+    This is the right call and the code says why: a self-contained signed token
+    cannot be revoked before it expires, which makes "sign out everywhere",
+    "sign out after a password change" and "this device was stolen" impossible
+    to honour.
+  </p>
+  <p>
+    Only an HMAC of the token is stored, so a database dump yields no usable
+    cookies. Sessions carry both an idle window and an absolute expiry, and
+    concurrent sessions per user are capped.
+  </p>
+
+  <h4>Cookie flags</h4>
+  <p>
+    Over HTTPS the session cookie is issued as
+    <code>__Host-dlt_session</code>: <code>HttpOnly</code>,
+    <code>Secure</code>, <code>SameSite=Strict</code>, <code>Path=/</code>,
+    no <code>Domain</code>. The <code>__Host-</code> prefix is what stops a
+    sibling subdomain setting or shadowing it — a defence that plain
+    <code>Secure</code> does not provide.
+  </p>
+
+  <h3>Three independent CSRF defences</h3>
+  <p>
+    The module is explicit that each layer has a known failure mode, which is
+    why there are three:
+  </p>
+  <ol>
+    <li><strong><code>SameSite=Strict</code></strong> — the browser does not attach the cookie cross-site at all. Strong, but only as good as the browser.</li>
+    <li><strong>Origin check</strong> — rejects a cross-origin request even if a cookie did arrive. Fails open on clients that omit <code>Origin</code>, so it falls back to <code>Referer</code> and refuses when neither is present.</li>
+    <li><strong>Double-submit token</strong> — the request must echo a value only same-origin script could have read.</li>
+  </ol>
+  <p>
+    Ordering is correct: CSRF is verified only once a session is known, because
+    a request with no session carries no ambient authority to forge against.
+    Public endpoints — a scan page, a finder's message — are exempt by design
+    and rate-limited instead.
+  </p>
+</section>
+
+<section id="api">
+  <h2><span class="n">§ 4</span>API security</h2>
+
+  <h3>Authorisation, and the 404 that should be a 403</h3>
+  <p>
+    Every owner-scoped fetch goes through one helper that filters by owner in
+    the query itself, rather than fetching and then checking. A tag belonging
+    to someone else returns <code>404</code>, not <code>403</code> — on
+    purpose:
+  </p>
+  <span class="src">api/app/security/authz.py</span>
+<pre><code>def owned_tag(tag_id: uuid.UUID | str) -> Tag:
+    """Fetches a tag that belongs to the signed-in user.
+
+    A tag owned by someone else returns 404 rather than 403: telling a caller
+    that an id exists but is not theirs confirms the id, which is an
+    enumeration oracle over every tag in the system.
+    """</code></pre>
+
+  <h3>Input validation</h3>
+  <p>
+    Every endpoint parses its body through a Pydantic model with
+    <code>extra="forbid"</code>, whitespace stripping and an explicit
+    <code>max_length</code> on every string. Forbidding unknown keys is what
+    closes mass-assignment: a request cannot smuggle a field the endpoint did
+    not intend to accept. Request bodies are capped at 64&nbsp;KiB.
+  </p>
+  <p>
+    Values that reach a renderer are constrained to fixed lists rather than
+    accepted as free text — the bag icon and its colour are enum names, not an
+    arbitrary string and a hex colour, precisely because one of them is drawn
+    into a PDF.
+  </p>
+
+  <h3>Response headers</h3>
+  <p>Taken off a running instance:</p>
+<pre><code>content-security-policy: default-src 'none'; img-src 'self' data:; style-src 'none';
+  script-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'; sandbox
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: no-referrer
+permissions-policy: accelerometer=(), autoplay=(), camera=(), geolocation=(), ...
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-site
+cache-control: no-store, private</code></pre>
+  <p>
+    The API returns JSON, images and PDFs, never HTML that runs script, so the
+    policy denies essentially everything as a backstop. <code>no-store</code>
+    on every response matters more than it looks: these responses carry
+    decrypted personal data, and none of it may be held by a shared cache.
+  </p>
+  <div class="note warn">
+    <strong>A bug this analysis inherited rather than found.</strong> The blanket
+    <code>sandbox</code> directive above sets every sandbox flag, including the
+    one that forbids downloads — which made browsers refuse to save the print
+    PDF or render the QR symbol at all. Files meant to be opened or saved now
+    receive <code>sandbox allow-downloads</code> and keep the rest of the
+    policy. It is noted here because it is the clearest example in this
+    codebase of a hardening measure that was strictly too strong and broke a
+    feature silently.
+  </div>
+
+  <h3>CORS</h3>
+  <p>
+    A single configured origin, with credentials. No wildcard, no
+    reflected-origin fallback: an unlisted origin simply receives no CORS
+    headers. <code>Vary: Origin</code> is added unconditionally, including when
+    no grant is issued — without that, a cache could serve an allowed response
+    to a different origin.
+  </p>
+
+  <h3>Rate limiting</h3>
+  <p>
+    Applied per endpoint at limits that reflect what each is worth to an
+    attacker: 5 registrations an hour, 10 sign-ins per quarter hour, 10 token
+    rotations an hour. See <a href="#f2">F-2</a> and <a href="#f3">F-3</a> for
+    two ways this becomes weaker than it reads.
+  </p>
+
+  <h3>Bot mitigation</h3>
+  <p>
+    Cloudflare Turnstile guards registration, sign-in, password reset and the
+    finder's message form. Two decisions are worth endorsing: the client IP is
+    <em>not</em> forwarded in the verification call, and verification
+    <strong>fails closed</strong> — if Cloudflare cannot be reached the request
+    is refused. The protected actions are exactly the ones an attacker would
+    push through during an outage.
+  </p>
+  <p>
+    Turnstile is also correctly bound to an action, so a token solved on the
+    sign-in page cannot be replayed against registration. It is disabled
+    entirely when unconfigured, which keeps self-hosting free of a Cloudflare
+    dependency.
+  </p>
+</section>
+
+<section id="public">
+  <h2><span class="n">§ 5</span>The public surface</h2>
+  <p>
+    This is the part of the system a stranger can reach, and the part the
+    product exists to get right. The test is simple: scan a tag and see what
+    comes back.
+  </p>
+  <div class="pair">
+    <figure>
+      <img src="screenshots/sec-scan-safe.png" alt="Scanning a tag that is marked safe: a status page with no personal information">
+      <figcaption><strong>Marked safe.</strong> No name, no contact, nothing. The response body contains no personal fields at all — they are not sent and hidden, they are never read.</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/sec-scan-lost.png" alt="The same tag marked lost: the owner's name and a relayed message form">
+      <figcaption><strong>Marked lost.</strong> Only what the owner opted into: a name, and a way to message them. The address is never shown at any setting.</figcaption>
+    </figure>
+  </div>
+  <p>
+    Disclosure is decided server-side from the tag's current state, per field.
+    The client is never sent data it is expected not to display — the common
+    failure mode where a determined user reads the JSON and finds everything.
+  </p>
+
+  <h3>Reading a page has no side effects</h3>
+  <p>
+    Loading the scan page is a plain <code>GET</code>. Recording the scan is a
+    separate <code>POST</code> the page makes after it renders, which keeps
+    link-preview bots and browser prefetches out of the owner's scan history
+    and inbox. Repeat scans from the same coarse network within a window are
+    deduplicated.
+  </p>
+
+  <h3>The masked relay</h3>
+  <p>
+    A finder can message the owner without either side learning the other's
+    address. The finder holds a relay token; the owner sees a thread. An
+    optional finder email — used only to send them the conversation link — is
+    encrypted and <em>never</em> shown to the owner, which is a distinction the
+    code is careful about: it exists so the finder can follow the thread, not
+    so the owner can reach them.
+  </p>
+
+  <h3>Scan tokens are bearer credentials</h3>
+  <p>
+    Anyone who photographs a tag can open its page. That is inherent to a
+    printed QR code and cannot be designed away. It is mitigated rather than
+    solved: the token is 256 random bits, it identifies a row and nothing else,
+    <code>Referrer-Policy: no-referrer</code> keeps it out of onward requests,
+    the page is <code>noindex</code>, and the owner can rotate the code —
+    invalidating every printed copy and closing open conversations.
+  </p>
+</section>
+
+<section id="privacy">
+  <h2><span class="n">§ 6</span>Privacy</h2>
+
+  <h3>Addresses are never stored</h3>
+  <p>
+    Rate limiting and scan deduplication need to recognise "the same client
+    again". Storing IPs would turn the scan log into a location history of
+    whoever handled the bag. Instead: truncate, then keyed-hash, salted per UTC
+    day.
+  </p>
+  <span class="src">api/app/security/privacy.py</span>
+<pre><code>def hash_ip(pepper: bytes, ip: str | None, *, day: dt.date | None = None) -> bytes | None:
+    """Keyed, day-salted hash of a truncated client address.
+
+    The salt rolls at UTC midnight, so yesterday's hashes cannot be matched
+    against today's — the value stops being a correlation handle on its own.
+    """
+    day = day or dt.datetime.now(dt.UTC).date()
+    message = f"ip\x00{day.isoformat()}\x00{_truncate_ip(ip)}".encode()
+    return hmac.new(pepper, message, hashlib.sha256).digest()</code></pre>
+  <p>
+    Truncating <em>before</em> hashing is the part that matters. Hashing alone
+    would still permit a dictionary attack over the whole IPv4 space; a
+    recovered preimage here names a <code>/24</code>, not a household. Rolling
+    the salt daily then caps how long even that correlates.
+  </p>
+
+  <h3>User agents are reduced to a label</h3>
+  <p>
+    A full user-agent string is a well-known fingerprinting surface. The
+    sessions screen needs "Safari on iPhone", which does not require keeping
+    the string — so it keeps one of a fixed set of labels and nothing else.
+  </p>
+  <figure>
+    <img src="screenshots/sec-sessions.png" alt="The signed-in devices list, showing coarse device labels and no IP addresses">
+    <figcaption>What the owner sees of their own sessions. No addresses, no user-agent strings — and any of them can be revoked.</figcaption>
+  </figure>
+
+  <h3>What the owner learns about a finder</h3>
+  <figure>
+    <img src="screenshots/sec-scan-activity.png" alt="Scan activity for a tag: a timestamp, a coarse client label, and an expiry">
+    <figcaption>
+      A timestamp, a coarse device label, and a city only if the finder chose
+      to share one. The row states its own expiry, which is unusually honest:
+      retention is visible in the interface, not buried in a policy.
+    </figcaption>
+  </figure>
+
+  <h3>Retention</h3>
+  <p>
+    Scan events, relay threads and audit rows all carry an
+    <code>expires_at</code> and are <em>hard</em>-deleted by
+    <code>flask purge</code> — not soft-deleted, on the stated reasoning that a
+    soft-deleted location history is still a location history. Defaults: 90
+    days for scans, 30 for conversations, 365 for audit rows.
+  </p>
+  <div class="note warn">
+    Purging is a scheduled job, not automatic. An operator who never schedules
+    <code>make purge</code> keeps everything forever, and nothing in the
+    application will complain. This is the single easiest way to accidentally
+    void the product's retention promise.
+  </div>
+
+  <h3>The audit log</h3>
+  <p>
+    An append-only trail records authentication events, account changes, tag
+    lifecycle events, and two specific reads of decrypted personal data — the
+    profile endpoint and the account export. It is deliberately constrained to
+    metadata — counts, booleans, record ids — so it never becomes a second,
+    unencrypted copy of the data it exists to protect. Its own IP field is
+    stored through the same day-salted hash as everything else.
+  </p>
+  <p>
+    It does not, however, cover <em>every</em> decryption, which is what the
+    README claims. See <a href="#f9">F-9</a>.
+  </p>
+
+  <h3>Third parties</h3>
+  <table>
+    <thead><tr><th>party</th><th>when</th><th>what it sees</th></tr></thead>
+    <tbody>
+      <tr><td>Cloudflare (Turnstile)</td><td>Only when configured, and only on register / sign-in / reset / finder message</td><td>The browser, when it serves the widget. The server does not forward the client IP in verification.</td></tr>
+      <tr><td>Google Fonts</td><td><strong>Every page load</strong>, unconditionally</td><td>IP address, user agent, referring page. See <a href="#f4">F-4</a>.</td></tr>
+      <tr><td>Your mail provider</td><td>Notifications</td><td>Recipient address and a deliberately vague subject — never which bag, never what was said.</td></tr>
+      <tr><td>Your geolocation provider</td><td>Only if configured away from the <code>null</code> default</td><td>Whatever that provider is given</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="findings">
+  <h2><span class="n">§</span>Findings in detail</h2>
+
+  <div class="finding" id="f1">
+    <h3>F-1 · A TOTP code can be replayed inside its validity window</h3>
+    <div class="tags"><span class="sev low">Low</span><span class="sev info">Authentication</span></div>
+    <p>
+      Second-factor codes are verified with <code>pyotp.TOTP(secret).verify(code, valid_window=1)</code>
+      and no record is kept of which codes have been used. A code is therefore
+      accepted repeatedly for as long as it is inside the window — up to about
+      90 seconds given the one-step drift allowance.
+    </p>
+    <p><strong>Evidence.</strong> Against the library as configured:</p>
+<pre><code>&gt;&gt;&gt; code = t.now()
+&gt;&gt;&gt; t.verify(code, valid_window=1), t.verify(code, valid_window=1)
+(True, True)</code></pre>
+    <p>
+      <strong>Impact.</strong> Real but narrow. It requires an attacker to have
+      the password already and to observe a code in near real time — a phishing
+      proxy, shoulder-surfing, or malware on the phone. It does not help an
+      offline attacker. The eight-attempt lockout and the sign-in rate limit
+      both still apply.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Store the last accepted counter value per
+      user and refuse any code whose counter is less than or equal to it. That
+      is a single integer column and turns a 90-second reuse window into none.
+    </div>
+  </div>
+
+  <div class="finding med" id="f2">
+    <h3>F-2 · Rate limiting defaults to per-process memory</h3>
+    <div class="tags"><span class="sev med">Medium</span><span class="sev info">API</span></div>
+    <p>
+      <code>ratelimit_storage_uri</code> defaults to <code>memory://</code>,
+      while the documented production deployment runs
+      <code>gunicorn --workers 4</code>. Each worker keeps its own counters, so
+      the effective limit is four times the configured one, and every limit
+      resets on deploy.
+    </p>
+    <p>
+      "5 registrations per hour" becomes 20; "10 sign-ins per 15 minutes"
+      becomes 40. Those are the numbers standing between an attacker and a
+      credential-stuffing run.
+    </p>
+    <p>
+      <strong>This is already documented</strong> in both
+      <a href="self-hosting.md">self-hosting.md</a> and <code>SECURITY.md</code>.
+      The finding is not that it is unknown — it is that the insecure
+      configuration is the <em>default</em>, and nothing at runtime says so.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Set
+      <code>DLT_RATELIMIT_STORAGE_URI</code> to a Redis URL in any
+      multi-process deployment. Better: have <code>create_app</code> log a
+      warning at boot when <code>env == "production"</code> and the storage URI
+      is still <code>memory://</code>. <code>make check</code> already exists to
+      report the running configuration; this belongs in it.
+    </div>
+  </div>
+
+  <div class="finding med" id="f3">
+    <h3>F-3 · A misconfigured proxy-hop count silently collapses per-client limits</h3>
+    <div class="tags"><span class="sev med">Medium</span><span class="sev info">API</span></div>
+    <p>
+      <code>trusted_proxy_hops</code> defaults to <code>0</code>, which is the
+      correct and safe default for a directly exposed app — the
+      <code>X-Forwarded-For</code> header is ignored entirely. The algorithm
+      itself is right: it counts from the <em>right</em> of the chain, so a
+      client can prepend fake entries but cannot remove ones a real proxy
+      appended.
+    </p>
+    <p>
+      The hazard is the deployment. The documented setup puts nginx in front.
+      If <code>DLT_TRUSTED_PROXY_HOPS</code> is not raised to match, every
+      request appears to come from the proxy's address. Per-IP rate limits
+      become one global bucket, and scan deduplication treats every finder as
+      the same client. Nothing fails; the protections just stop discriminating.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Same as F-2: make it visible at boot.
+      A production instance where <code>trusted_proxy_hops == 0</code> and every
+      observed <code>remote_addr</code> is a private address is almost certainly
+      misconfigured, and can say so.
+    </div>
+  </div>
+
+  <div class="finding" id="f4">
+    <h3>F-4 · Every page load discloses the visitor to Google Fonts</h3>
+    <div class="tags"><span class="sev low">Low</span><span class="sev info">Privacy</span></div>
+    <p>
+      Both <code>web/index.html</code> and this documentation load typefaces
+      from <code>fonts.googleapis.com</code> and <code>fonts.gstatic.com</code>.
+      Every visitor's IP address, user agent and referring page therefore
+      reaches Google — including a stranger who has just scanned a bag and has
+      made no choice to engage with anything.
+    </p>
+    <p>
+      This sits awkwardly beside the rest of the design. The application goes
+      to real lengths not to store a finder's address, then hands it to a third
+      party before the page has painted. It is also the one third-party call
+      that is unconditional: Turnstile is opt-in and scoped to four endpoints;
+      this is on every page, always.
+    </p>
+    <p>
+      In some jurisdictions serving Google Fonts from Google has been held to
+      require consent. That is a compliance question rather than a technical
+      one, but it lands on the same fix.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Self-host the two families. They are
+      open-licensed; vendoring the <code>woff2</code> files removes the request
+      entirely and lets <code>font-src</code> and <code>style-src</code> drop
+      back to <code>'self'</code>, which also tightens <a href="#f6">F-6</a>.
+    </div>
+  </div>
+
+  <div class="finding" id="f5">
+    <h3>F-5 · One recovery-code attempt costs ten Argon2 verifications</h3>
+    <div class="tags"><span class="sev low">Low</span><span class="sev info">Authentication</span></div>
+    <p>
+      <code>consume_recovery_code</code> cannot know which of a user's ten
+      codes was submitted, so it verifies the candidate against each unused
+      hash in turn. Storing these as Argon2 hashes is the right call — they are
+      short enough that HMAC would leave them brute-forceable — but it means a
+      single request can cost ten Argon2 operations at 64&nbsp;MiB each.
+    </p>
+    <p>
+      <strong>Impact.</strong> A modest denial-of-service amplification against
+      the sign-in endpoint: roughly 640&nbsp;MiB of memory churn per attempt,
+      reachable only by someone who already has a valid password, and bounded by
+      the sign-in rate limit — which <a href="#f2">F-2</a> and
+      <a href="#f3">F-3</a> can each weaken.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Give each recovery code a short random
+      public prefix, stored in the clear, and look up the single candidate row
+      by it before verifying. One Argon2 operation per attempt, with no
+      reduction in the strength of the stored hash.
+    </div>
+  </div>
+
+  <div class="finding" id="f6">
+    <h3>F-6 · The client CSP permits inline styles</h3>
+    <div class="tags"><span class="sev low">Low</span><span class="sev info">Client</span></div>
+    <p>
+      The application's policy carries
+      <code>style-src 'self' 'unsafe-inline' https://fonts.googleapis.com</code>.
+      The reason is documented and genuine: React writes inline style
+      attributes, and the tag artwork computes its fills at render time.
+      Scripts are not granted the same latitude, which is the more important
+      half.
+    </p>
+    <p>
+      The residual risk is real but second-order. An injection that could set
+      style but not script can still exfiltrate via CSS selectors, or reskin the
+      page for a phishing overlay. Getting there requires an injection point,
+      and React's default escaping is the control actually preventing that.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Accept for now; revisit with a
+      nonce-based style policy if the artwork's computed fills ever move to CSS
+      custom properties. Removing the Google Fonts origin (<a href="#f4">F-4</a>)
+      shortens the directive either way.
+    </div>
+  </div>
+
+  <div class="finding info" id="f7">
+    <h3>F-7 · <code>Server</code> masking has no effect under gunicorn</h3>
+    <div class="tags"><span class="sev info">Informational</span><span class="sev info">API</span></div>
+    <p>
+      <code>headers.py</code> ends by replacing the <code>Server</code> header,
+      with the stated reasoning that "server fingerprints tell an attacker which
+      CVE list to work from". The application-level header is then overridden by
+      whatever actually speaks HTTP.
+    </p>
+    <p><strong>Evidence.</strong> The same endpoint, two servers:</p>
+<pre><code>$ curl -sS -D - -o /dev/null http://127.0.0.1:5001/api/v1/health | grep -i '^server'
+server: Werkzeug/3.1.8 Python/3.13.5      <span class="c"># development server</span>
+
+$ curl -sS -D - -o /dev/null http://127.0.0.1:5099/api/v1/health | grep -i '^server'
+Server: gunicorn                          <span class="c"># production server</span></code></pre>
+    <p>
+      Neither says <code>dlt</code>. Under gunicorn the leak is mild — a
+      product name with no version. Under the development server it is a full
+      version banner, which is one more reason never to expose that server.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Strip or rewrite the header at the
+      reverse proxy, where it can actually be controlled, and drop the
+      ineffective application-level code rather than leave a comment claiming a
+      protection that is not in force.
+    </div>
+  </div>
+
+  <div class="finding info" id="f8">
+    <h3>F-8 · Rate-limit headers publish the limit configuration</h3>
+    <div class="tags"><span class="sev info">Informational</span><span class="sev info">API</span></div>
+    <p>
+      <code>RATELIMIT_HEADERS_ENABLED</code> is on, so every response carries
+      <code>X-RateLimit-Limit</code>, <code>-Remaining</code> and
+      <code>-Reset</code>. An attacker tuning a slow credential-stuffing run
+      does not have to probe for the threshold; it is quoted to them.
+    </p>
+    <p>
+      This is a defensible trade — the same headers let a legitimate client
+      back off politely, and an attacker would find the limit within a few
+      requests anyway. Recorded so the choice is visible rather than accidental.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Keep, unless you are specifically
+      concerned about low-and-slow credential stuffing, in which case disable
+      them on <code>/auth/*</code> only.
+    </div>
+  </div>
+  <div class="finding" id="f9">
+    <h3>F-9 · The audit trail does not cover every decryption the README claims</h3>
+    <div class="tags"><span class="sev low">Low</span><span class="sev info">Privacy</span></div>
+    <p>
+      <code>README.md</code> states: "Reads of decrypted personal data are
+      written to an append-only audit log." The implementation is narrower.
+      <code>PII_DECRYPTED</code> is recorded at exactly one call site, and
+      <code>ACCOUNT_EXPORTED</code> at one more:
+    </p>
+<pre><code>$ grep -rn "audit.PII_DECRYPTED\|audit.ACCOUNT_EXPORTED" app/ | grep -v audit.py
+app/api/account.py:36:        audit.PII_DECRYPTED,
+app/api/account.py:163:        audit.ACCOUNT_EXPORTED,</code></pre>
+    <p>
+      Both are the account holder reading their own data. Decryptions that
+      happen elsewhere write no audit row: a tag label read on the dashboard, a
+      relay message decrypted for the inbox, and — most notably — the owner's
+      name decrypted and published because a stranger scanned a bag marked
+      lost.
+    </p>
+    <p>
+      <strong>Impact.</strong> No data is exposed that would not be exposed
+      anyway; this is a gap in the record, not in the access control. It is
+      also not invisible: a scan that revealed contact details is recorded in
+      the tag's own scan history with <code>revealed_contact</code> set. But an
+      operator relying on the audit log alone to answer "when was this person's
+      name decrypted, and why" will get an incomplete answer, and the README
+      promises a complete one.
+    </p>
+    <div class="fix">
+      <strong>Recommendation.</strong> Pick one and make it true. Either record
+      <code>PII_DECRYPTED</code> inside <code>UserCrypto.read_user</code> —
+      which is the single chokepoint every decryption already passes through,
+      and would make the claim structurally true rather than conventionally so —
+      or soften the README to describe what is actually recorded. The first is
+      better; the chokepoint already exists precisely so this kind of rule can
+      be enforced in one place.
+    </div>
+  </div>
+</section>
+
+<section id="residual">
+  <h2><span class="n">§</span>Residual risk</h2>
+  <p>Things that are true, unfixable within this design, or simply unexamined.</p>
+  <h4>Accepted by design</h4>
+  <ul>
+    <li><strong>Database plus environment together defeats the encryption.</strong> An attacker who holds both has the KEK and therefore every DEK. The design draws its line here deliberately, and says so.</li>
+    <li><strong>A printed QR is a bearer credential.</strong> Photographing a tag grants access to its page. Rotation is the remedy, not prevention.</li>
+    <li><strong>Email is not end-to-end encrypted.</strong> Notifications are therefore vague by construction: that a tag was scanned, never which bag or what was said.</li>
+    <li><strong>Turnstile fails closed.</strong> A Cloudflare outage blocks registration and sign-in. Correct for security, and an availability dependency worth knowing you have taken on.</li>
+  </ul>
+  <h4>Not examined in this review</h4>
+  <ul>
+    <li>Dependency vulnerabilities — no SCA run against <code>requirements.txt</code> or <code>package-lock.json</code>.</li>
+    <li>The PostgreSQL container, its TLS configuration and its backup story.</li>
+    <li>The <code>header</code> geolocation provider, which trusts edge-set headers and is only safe when something upstream strips them from client requests.</li>
+    <li>Denial of service at the network layer, and PDF rendering as an attack surface (ReportLab is fed only server-generated values, but this was not fuzzed).</li>
+    <li>Anything about the host, the operating system, or the people with access to it.</li>
+  </ul>
+</section>
+
+<section id="verify">
+  <h2><span class="n">§</span>Verify it yourself</h2>
+  <p>
+    None of the above should be taken on trust. The checks that produced it are
+    reproducible:
+  </p>
+<pre><code><span class="c"># The full test suite, including crypto, privacy and enumeration tests</span>
+make test
+
+<span class="c"># What the running configuration actually reports</span>
+make check
+
+<span class="c"># Browser tests against a real stack, including a full two-factor enrolment</span>
+make e2e
+
+<span class="c"># Confirm no secret is tracked by git</span>
+make secrets-check
+
+<span class="c"># The response headers quoted in §4</span>
+curl -sS -D - -o /dev/null http://localhost:5173/api/v1/health</code></pre>
+  <p>
+    The tests worth reading before trusting any of this are
+    <code>api/tests/test_crypto.py</code> (envelope encryption, AAD binding,
+    crypto-shredding), <code>api/tests/test_privacy_and_print.py</code> (address
+    truncation, day-salting, user-agent reduction) and
+    <code>api/tests/test_tags_and_scan.py</code> (what a stranger can and cannot
+    see).
+  </p>
+  <p>
+    Found something this review missed? <code>SECURITY.md</code> has the
+    disclosure process. Please do not open a public issue.
+  </p>
+</section>
+
+<footer>
+  Dynamic Luggage Tag · security and privacy analysis of <code>5de265a</code>,
+  17 September 2026 · <a href="index.html">page tour</a> ·
+  <a href="self-hosting.md">self-hosting</a>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

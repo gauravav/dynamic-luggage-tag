@@ -111,11 +111,15 @@ setting it swinging.
 - Sessions are server-side and revocable: `HttpOnly`, `Secure`, `SameSite=Strict`, `__Host-`
 - Optional TOTP two-factor with single-use recovery codes
 - Scan history, conversations and audit rows expire and are hard-deleted
-- Reads of decrypted personal data are written to an append-only audit log
+- Authentication, account changes and profile reads are written to an append-only audit log
 
 Threat model, key rotation and the production checklist:
-[`SECURITY.md`](SECURITY.md). Found a security issue? Please do not open a
-public issue — see `SECURITY.md` for disclosure.
+[`SECURITY.md`](SECURITY.md). A full written review of the above — including
+what it does *not* cover, and nine findings with recommendations — is in
+[`docs/security-analysis.html`](docs/security-analysis.html).
+
+Found a security issue? Please do not open a public issue — see `SECURITY.md`
+for disclosure.
 
 ## Contributing
 

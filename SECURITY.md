@@ -7,6 +7,13 @@ reproduction steps, and the impact you believe it has. You will get an
 acknowledgement within a few days, and credit in the release notes if you would
 like it.
 
+## A written analysis
+
+[`docs/security-analysis.html`](docs/security-analysis.html) reviews the whole
+design against the code — data at rest, authentication, sessions and CSRF, the
+API surface, the public scan page and privacy — and lists nine findings with
+recommendations. It is deliberately explicit about what was not examined.
+
 ## What this project protects, and from whom
 
 The threat this product exists to address is a mundane one: a luggage tag with
