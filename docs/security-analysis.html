@@ -687,16 +687,34 @@ if tag.name_disclosure == NAME_ALWAYS and not retired:</code></pre>
     comes home; a watcher's saved copy is permanently demoted. An owner who has
     reprinted can switch the old codes off entirely.
   </p>
+  <p>
+    That switch is an assertion about a moment — everything in circulation is
+    now the current code — and a later rotation makes it untrue, because the
+    code the bag is carrying becomes the one being retired. Rotating therefore
+    clears it. Without that, an owner who had reprinted once would silently
+    kill their own tag the second time they rotated, with nothing on screen to
+    say so.
+  </p>
 
   <h4>Watching is visible without identifying anyone</h4>
   <p>
     Two counters, neither of which describes a caller. Every read of the scan
     endpoint increments <code>page_fetch_count</code>; only a browser that
     rendered the page and said so increments <code>scan_count</code>. A script
-    on a timer moves the first and not the second. Separately, a read carrying
-    a code the tag has already replaced is counted on its own — nobody holding
-    the printed tag can produce one.
+    on a timer moves the first and not the second, whichever code it is using.
   </p>
+  <div class="note warn">
+    <strong>A signal that looked useful and was not.</strong> Reads carrying a
+    replaced code were briefly counted as evidence of watching, on the
+    reasoning that nobody holding the printed tag can produce one. That
+    reasoning is wrong in the commonest case: a retired code resolves
+    <em>precisely so</em> a bag on a tag nobody has reprinted still comes home,
+    so an honest finder generates exactly the reads a saved link does. Ten
+    ordinary scans of an un-reprinted tag were enough to call it watched.
+    Those reads are still reported — the owner should know their old code is in
+    circulation — but they no longer drive the verdict, because a warning that
+    fires on the ordinary case is a warning people learn to ignore.
+  </div>
   <figure>
     <img src="screenshots/sec-watched.png" alt="A notice on the tag page reporting reads that never rendered and reads using a replaced code">
     <figcaption>

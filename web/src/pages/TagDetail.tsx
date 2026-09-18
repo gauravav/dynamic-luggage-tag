@@ -129,7 +129,7 @@ export function TagDetail() {
   async function rotate() {
     if (!tagId) return
     const confirmed = window.confirm(
-      'Issue a new code?\n\nThe code printed on the tag keeps working — a finder can still reach you — but it can never publish your name again, and any open conversation is closed.\n\nReprint when convenient, not before.',
+      'Issue a new code?\n\nThe code printed on the tag keeps working — a finder can still reach you — but it can never publish your name again, and any open conversation is closed.\n\nReprint when convenient, not before. If you had switched old codes off, that is turned back on: the code on the bag is the one this replaces.',
     )
     if (!confirmed) return
     setBusy(true)
@@ -214,9 +214,13 @@ export function TagDetail() {
 
       <div className="grid grid--split" style={{ alignItems: 'start' }}>
         <Stagger className="stack">
-          {tag.watched && (
+          {(tag.watched || tag.stale_scan_count > 0) && (
             <StaggerItem>
-              <WatchNotice tag={tag} onBlockRetired={() => patch({ block_retired_tokens: true })} busy={busy} />
+              <WatchNotice
+                tag={tag}
+                onBlockRetired={() => patch({ block_retired_tokens: true })}
+                busy={busy}
+              />
             </StaggerItem>
           )}
           <StaggerItem>

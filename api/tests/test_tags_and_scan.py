@@ -125,10 +125,7 @@ class TestTagLifecycle:
         assert app.test_client().get(f"/api/v1/scan/{old_token}").status_code == 404
 
     def test_reads_with_a_retired_code_are_reported_to_the_owner(self, client, app, outbox):
-        """Nobody holding the printed tag can produce a code it has replaced.
-
-        So the count is the owner's evidence that a link is in circulation.
-        """
+        """The owner is told, so they can decide whether to reprint."""
         csrf, _ = register_and_sign_in(client, outbox)
         tag = _make_tag(client, csrf)
         old_token = _token_from_url(tag["scan_url"])
@@ -142,8 +139,73 @@ class TestTagLifecycle:
         assert seen["stale_scan_count"] == 4
         assert seen["last_stale_scan_at"] is not None
         assert seen["retired_code_count"] == 1
-        # Four reads with a replaced code is past the threshold on its own.
-        assert seen["watched"] is True
+
+    def test_honest_scans_of_an_un_reprinted_tag_are_not_called_watching(self, client, app, outbox):
+        """The commonest case after a rotation, and it must not raise an alarm.
+
+        A retired code resolves so that a bag on a tag nobody has reprinted yet
+        still comes home. Every one of those scans is a finder doing exactly
+        what the tag asks. Counting them as evidence of a watcher would call
+        the ordinary case suspicious — and teach the owner to ignore a warning
+        that matters when it is real.
+        """
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        old_token = _token_from_url(tag["scan_url"])
+        client.post(f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf))
+
+        for _ in range(10):
+            app.test_client().get(f"/api/v1/scan/{old_token}")
+
+        seen = client.get(f"/api/v1/tags/{tag['id']}").get_json()["tag"]
+        assert seen["stale_scan_count"] == 10
+        assert seen["watched"] is False
+
+    def test_a_bot_on_a_retired_code_is_still_caught(self, client, app, outbox):
+        """Polling shows up in the read-versus-render gap, whichever code it uses."""
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        old_token = _token_from_url(tag["scan_url"])
+        client.post(f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf))
+
+        poller = app.test_client()
+        for _ in range(25):
+            poller.get(f"/api/v1/scan/{old_token}")
+
+        assert client.get(f"/api/v1/tags/{tag['id']}").get_json()["tag"]["watched"] is True
+
+    def test_rotating_again_never_strands_the_code_on_the_bag(self, client, app, outbox):
+        """Blocking asserts something a later rotation makes untrue.
+
+        The owner reprints, blocks the old codes, and later rotates again. The
+        code now printed on the bag is the one this rotation retires — so if
+        the block survived, the tag would be dead the moment the request
+        returned, with nothing on screen to say so.
+        """
+        csrf, _ = register_and_sign_in(client, outbox)
+        tag = _make_tag(client, csrf)
+        first = _token_from_url(tag["scan_url"])
+
+        rotated = client.post(
+            f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf)
+        ).get_json()["tag"]
+        printed = _token_from_url(rotated["scan_url"])
+
+        # Reprinted with `printed`, so the original can be switched off.
+        client.patch(
+            f"/api/v1/tags/{tag['id']}",
+            json={"block_retired_tokens": True},
+            headers=auth_headers(csrf),
+        )
+        assert app.test_client().get(f"/api/v1/scan/{first}").status_code == 404
+
+        # Rotating again retires `printed` — which is what the bag carries.
+        client.post(f"/api/v1/tags/{tag['id']}/rotate", headers=auth_headers(csrf))
+        assert app.test_client().get(f"/api/v1/scan/{printed}").status_code == 200
+        assert (
+            client.get(f"/api/v1/tags/{tag['id']}").get_json()["tag"]["block_retired_tokens"]
+            is False
+        )
 
     def test_reads_that_never_render_are_counted_separately(self, client, app, outbox):
         """A polling loop fetches; it does not render and report back.

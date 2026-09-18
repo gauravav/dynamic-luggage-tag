@@ -593,10 +593,45 @@ test.describe('the saved-link watcher', () => {
     await expect(finder.getByText('This bag has not been reported lost.')).toBeVisible()
     await outside.close()
 
-    // And the owner is told that a replaced code is in circulation.
+    // The owner is told the old code is in use — without being told they are
+    // being watched, which four honest scans of an un-reprinted tag are not.
     await page.reload()
-    await expect(page.getByText('This tag looks like it is being watched')).toBeVisible()
+    await expect(page.getByText('Your previous code is still in use')).toBeVisible()
     await expect(page.getByText(/using a code you have already replaced/)).toBeVisible()
+    await expect(page.getByText('This tag looks like it is being watched')).toHaveCount(0)
+  })
+
+  test('rotating again never strands the code printed on the bag', async ({
+    page,
+    browser,
+    request,
+  }) => {
+    const tag = await createTag(page, request, { label: 'Reprinted bag' })
+    page.on('dialog', (dialog) => dialog.accept())
+    await page.goto(`${APP}/app/tags/${tag.id}`)
+    await expect(page.getByRole('button', { name: 'Issue a new code' })).toBeVisible()
+    await page.waitForTimeout(1200)
+
+    // Rotate, reprint, and switch the old codes off.
+    await page.getByRole('button', { name: 'Issue a new code' }).click()
+    await expect(page.getByText(/A new code was issued/)).toBeVisible()
+    const printed = await page.locator('.code-block').first().innerText()
+
+    const outside = await browser.newContext({ storageState: SIGNED_OUT })
+    const finder = await outside.newPage()
+    await finder.goto(tag.scan_url)
+    await page.reload()
+    await page.waitForTimeout(800)
+    await page.getByRole('button', { name: /stop old codes/ }).click()
+    await expect(page.getByText(/Replaced codes are switched off/)).toBeVisible()
+
+    // Now rotate again. The code on the bag is the one being retired.
+    await page.getByRole('button', { name: 'Issue a new code' }).click()
+    await expect(page.getByText(/A new code was issued/)).toBeVisible()
+
+    await finder.goto(printed.trim())
+    await expect(finder.getByText(/not been reported lost|Reported lost/)).toBeVisible()
+    await outside.close()
   })
 })
 

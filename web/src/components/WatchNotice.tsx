@@ -5,16 +5,19 @@
  * reading the page — the server counts reads, and nothing about who sent them.
  * Two numbers carry it:
  *
- *   reads that never rendered   a browser that opens the page says so
- *                               afterwards; a script fetching the URL on a
- *                               timer does not
- *   reads with a replaced code  nobody holding the printed tag can produce a
- *                               code the tag has already rotated away from
+ * Only one number drives the verdict: reads that never rendered. A browser
+ * that opens the page says so afterwards; a script fetching the URL on a timer
+ * does not.
  *
- * The notice is deliberately calm. Neither signal proves bad intent — a link
- * preview, a security scanner, or a tag that was never reprinted all produce
- * the same numbers — so it says what was counted and what it would mean,
- * rather than accusing anyone.
+ * Reads carrying a replaced code are reported alongside it but deliberately do
+ * not trigger it. A retired code resolves so a bag on a tag nobody reprinted
+ * still comes home, which means an honest finder produces exactly the reads a
+ * saved link does. They are shown because they tell the owner their old code
+ * is still in circulation — which is worth knowing, and is not an accusation.
+ *
+ * The notice is calm for the same reason. A link preview or a security scanner
+ * produces the same numbers as a watcher, so it says what was counted and what
+ * it would mean rather than naming anyone.
  */
 
 import { motion } from 'motion/react'
@@ -33,6 +36,8 @@ export function WatchNotice({
 }) {
   const unrendered = Math.max(0, tag.page_fetch_count - tag.scan_count)
   const stale = tag.stale_scan_count
+  // The server's verdict, which rests on the read-versus-render gap alone.
+  const watched = tag.watched
 
   return (
     <motion.section
@@ -43,7 +48,9 @@ export function WatchNotice({
     >
       <div className="watch-notice__head">
         <EyeIcon />
-        <h3>This tag looks like it is being watched</h3>
+        <h3>
+          {watched ? 'This tag looks like it is being watched' : 'Your previous code is still in use'}
+        </h3>
       </div>
 
       <ul className="watch-notice__counts">
@@ -56,16 +63,19 @@ export function WatchNotice({
         {stale > 0 && (
           <li>
             <strong>{stale.toLocaleString()}</strong> read{stale === 1 ? '' : 's'} using a code you
-            have already replaced. Nobody holding the tag itself can produce one of those.
+            have already replaced — either this tag was never reprinted, or someone kept the old
+            link.
             {tag.last_stale_scan_at && <> Last seen {relativeTime(tag.last_stale_scan_at)}.</>}
           </li>
         )}
       </ul>
 
-      <p className="muted">
-        It may be nothing — a link preview, or a tag you never reprinted. But someone who scanned
-        this bag while it was safe can keep the link and wait for you to report it lost.
-      </p>
+      {watched && (
+        <p className="muted">
+          It may be nothing — a link preview, or a scanner crawling the address. But someone who
+          scanned this bag while it was safe can keep the link and wait for you to report it lost.
+        </p>
+      )}
 
       <p className="muted">
         {tag.name_disclosure === 'always' ? (

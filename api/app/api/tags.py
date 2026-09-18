@@ -29,22 +29,25 @@ MAX_TAGS_PER_USER = 25
 # saved URL on a timer produces hundreds, and it is the gap between the two
 # counts rather than either on its own that separates them.
 UNRENDERED_READS_BEFORE_WATCHED = 20
-# Reads with a code the tag has replaced. Lower, because this one is not
-# ambiguous in the same way — nobody generates a retired code by accident.
-STALE_READS_BEFORE_WATCHED = 3
 
 
 def _looks_watched(tag: Tag) -> bool:
     """Whether this tag shows signs of being polled rather than scanned.
 
-    Deliberately a rule the owner can be told in one sentence, not a score. It
-    is a prompt to go and look, and the page says exactly what it counted.
+    Only the gap between reads and rendered visits counts, and deliberately so.
+    Reads carrying a replaced code look like a useful signal and are not one:
+    a retired code resolves precisely so a bag on a tag nobody reprinted still
+    comes home, which means honest finders generate exactly the same reads a
+    saved link does. Counting them here called the ordinary case — rotate, do
+    not reprint yet, someone scans the bag — "watched", which is both wrong and
+    the sort of wrong that teaches an owner to ignore the warning.
+
+    A bot polling a retired code is still caught: it increments the read count
+    without ever rendering the page, the same as one polling the current code.
+
+    Deliberately a rule the owner can be told in one sentence, not a score.
     """
-    unrendered = max(0, tag.page_fetch_count - tag.scan_count)
-    return (
-        unrendered >= UNRENDERED_READS_BEFORE_WATCHED
-        or tag.stale_scan_count >= STALE_READS_BEFORE_WATCHED
-    )
+    return max(0, tag.page_fetch_count - tag.scan_count) >= UNRENDERED_READS_BEFORE_WATCHED
 
 
 def _scan_url(token: str) -> str:
@@ -257,6 +260,11 @@ def rotate_token(tag_id: str):
     crypto = user_crypto()
     db = db_session()
     config = app_config()
+
+    # Whatever the owner asserted about the last rotation, this one makes it
+    # untrue: the code now on the bag is the one about to be retired. Leaving
+    # the block set would strand the tag the moment this request returns.
+    tag.block_retired_tokens = False
 
     # Keep the outgoing code rather than discarding it. The bag is carrying it
     # printed on one side and written into an NFC sticker on the other, and
