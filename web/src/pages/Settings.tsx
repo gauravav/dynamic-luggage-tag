@@ -6,6 +6,7 @@ import { BusyLabel, Skeleton, Stagger, StaggerItem } from '../components/motion'
 import { PasswordField } from '../components/PasswordStrength'
 import { Field, Notice, Spinner, Toggle } from '../components/ui'
 import { formatDateTime } from '../lib/design'
+import { moleIsHidden, onMolePreferenceChange, setMoleHidden } from '../lib/molePreference'
 import { useSession } from '../state/session'
 
 export function Settings() {
@@ -182,7 +183,31 @@ function NotificationSection({
           }
         }}
       />
+      <MoleToggle />
     </section>
+  )
+}
+
+/**
+ * The way back for anyone who sent the mole away.
+ *
+ * It is the only setting on this page that is not about the account: it lives
+ * in this browser, because it is a preference about this screen rather than
+ * about the person, and it has to work signed out too.
+ */
+function MoleToggle() {
+  const [hidden, setHidden] = useState(moleIsHidden)
+  useEffect(() => onMolePreferenceChange(() => setHidden(moleIsHidden())), [])
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <Toggle
+        label="Show the mole"
+        hint="The character in the corner, with something to say about each page. Applies to this browser only."
+        checked={!hidden}
+        onChange={(next) => setMoleHidden(!next)}
+      />
+    </div>
   )
 }
 
@@ -523,6 +548,10 @@ function SessionsSection() {
 function PasswordSection({ context }: { context: string[] }) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
+  // Typed twice. A password you cannot see is a password you can mistype, and
+  // the cost of finding that out later is being locked out of your own tags.
+  const [confirm, setConfirm] = useState('')
+  const matches = next === confirm
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -539,6 +568,7 @@ function PasswordSection({ context }: { context: string[] }) {
       })
       setCurrent('')
       setNext('')
+      setConfirm('')
       setInfo(
         body.sessions_revoked > 0
           ? `Password changed. ${body.sessions_revoked} other device(s) were signed out.`
@@ -572,8 +602,21 @@ function PasswordSection({ context }: { context: string[] }) {
           onChange={setNext}
           context={context}
         />
+        <Field
+          label="New password again"
+          name="confirm_password"
+          type="password"
+          value={confirm}
+          onChange={setConfirm}
+          autoComplete="new-password"
+          error={confirm && !matches ? 'These two do not match.' : undefined}
+        />
         <p className="faint" style={{ marginTop: -6 }}>Changing it signs out every other device.</p>
-        <button type="submit" className="btn btn--primary btn--sm" disabled={busy || !current || !next}>
+        <button
+          type="submit"
+          className="btn btn--primary btn--sm"
+          disabled={busy || !current || !next || !matches}
+        >
           <BusyLabel busy={busy} idle="Change password" working="Changing…" />
         </button>
       </form>

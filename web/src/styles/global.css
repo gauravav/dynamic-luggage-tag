@@ -1060,3 +1060,107 @@ hr.rule { border: none; border-top: 1px solid var(--paper-line); margin: 28px 0;
   /* Signed in, the phone tab bar owns the bottom edge. Sit above it. */
   .mole-companion--app { bottom: calc(66px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- Six digits, as six suitcases ---------- */
+
+.code-input {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 16px;
+}
+.case {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 56px;
+  cursor: text;
+}
+@media (max-width: 380px) {
+  .code-input { gap: 5px; }
+  .case { width: 42px; height: 52px; }
+}
+/* The handle on top. */
+.case__handle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 18px;
+  height: 9px;
+  margin-left: -9px;
+  border: 2.5px solid var(--paper-line);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  transition: border-color 0.18s ease;
+}
+/* The case itself, behind the input. */
+.case__body {
+  position: absolute;
+  inset: 8px 0 0;
+  border: 2px solid var(--paper-line);
+  border-radius: 9px;
+  background: var(--white);
+  transition: border-color 0.18s ease, box-shadow 0.22s ease, background 0.18s ease;
+}
+/* Two straps across it, so it reads as luggage and not as a box. */
+.case__strap {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 4px;
+  background: var(--paper-deep);
+}
+.case__strap:first-child { left: 8px; }
+.case__strap:last-child { right: 8px; }
+
+.case input {
+  position: absolute;
+  inset: 8px 0 0;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: center;
+  font-family: var(--mono);
+  /* 16px minimum, or iOS Safari zooms the page when it is focused. */
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  caret-color: var(--forest);
+}
+.case input:focus { outline: none; }
+.case:focus-within .case__body {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 4px rgba(47, 93, 78, 0.14);
+}
+.case:focus-within .case__handle { border-color: var(--forest); }
+.case--packed .case__body { border-color: var(--forest); background: var(--forest-wash); }
+.case--packed .case__handle { border-color: var(--forest); }
+.case--packed .case__strap { background: rgba(47, 93, 78, 0.18); }
+
+.code-input--error .case__body { border-color: var(--brick); }
+.code-input--error .case__handle { border-color: var(--brick); }
+
+/* ---------- The journey those cases take ---------- */
+
+.journey {
+  margin: 0 0 14px;
+  padding: 10px 8px 4px;
+  background: var(--white);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.journey__art { display: block; width: 100%; height: auto; }
+
+/* The thing the mole brings back from an errand. */
+.mole-prop {
+  position: absolute;
+  top: 6px;
+  left: -6px;
+  display: inline-flex;
+  padding: 5px;
+  background: var(--white);
+  border: 1px solid var(--paper-line);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+}
