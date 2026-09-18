@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api, type ThreadSummary } from '../api/client'
+import { BrandMark } from './BrandMark'
+import { MoleCompanion } from './MoleCompanion'
 import { useOpenTagHandoff } from '../lib/appTabs'
 import { useSession } from '../state/session'
 
@@ -50,6 +52,7 @@ export function Layout() {
       </footer>
 
       {user && <BottomNav unread={unread} />}
+      <MoleCompanion signedIn={Boolean(user)} />
     </div>
   )
 }
@@ -77,10 +80,11 @@ export function SiteHeader({ unread = 0 }: { unread?: number }) {
         <Link to={user ? '/app' : '/'} className="brand">
           <motion.span
             className="brand__mark"
-            aria-hidden="true"
             whileHover={{ rotate: -8, scale: 1.08 }}
             transition={{ type: 'spring', stiffness: 400, damping: 12 }}
-          />
+          >
+            <BrandMark />
+          </motion.span>
           <span className="brand__name">Dynamic Luggage Tag</span>
         </Link>
         <nav className="nav" aria-label="Main">

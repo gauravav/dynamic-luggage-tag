@@ -139,15 +139,14 @@ a { color: var(--forest-deep); }
   color: var(--ink);
   text-decoration: none;
 }
+/* The mascot, not a swatch. Sized to sit on the cap height of the wordmark. */
 .brand__mark {
-  width: 22px;
-  height: 28px;
-  border-radius: 4px;
-  border: 1px solid var(--paper-line);
-  background:
-    repeating-linear-gradient(135deg, var(--forest) 0 3px, transparent 3px 7px),
-    var(--paper-deep);
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
 }
+.brand__mole { display: block; overflow: visible; }
 .nav {
   display: flex;
   align-items: center;
@@ -981,4 +980,83 @@ hr.rule { border: none; border-top: 1px solid var(--paper-line); margin: 28px 0;
 .claim-row { padding: 14px 18px; gap: 14px; }
 @media (max-width: 620px) {
   .claim-row { flex-direction: column; align-items: flex-start; }
+}
+
+/* ---------- The mole, on every page ---------- */
+
+.mole-companion {
+  position: fixed;
+  right: 18px;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  /* The bubble is the only part that should ever catch a click outside the
+     mole itself, so the column does not sit over the page. */
+  pointer-events: none;
+}
+.mole-companion > * { pointer-events: auto; }
+
+.mole-companion__button {
+  width: 118px;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  /* Half below the edge at rest: it is looking in, not standing in the room. */
+  transform-origin: 50% 100%;
+}
+.mole-companion__button .mole svg { display: block; overflow: visible; }
+
+.mole-bubble {
+  position: relative;
+  max-width: 270px;
+  margin-bottom: 4px;
+  padding: 14px 16px 12px;
+  background: var(--white);
+  border: 1px solid var(--paper-line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.mole-bubble p { margin: 0 0 4px; }
+.mole-bubble .btn { margin-top: 8px; }
+/* The tail, pointing down at the mole. */
+.mole-bubble::after {
+  content: '';
+  position: absolute;
+  right: 34px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  background: var(--white);
+  border-right: 1px solid var(--paper-line);
+  border-bottom: 1px solid var(--paper-line);
+  transform: rotate(45deg);
+}
+.mole-bubble__away {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mole-bubble__away:hover { color: var(--ink-soft); }
+
+@media (max-width: 720px) {
+  .mole-companion { right: 10px; gap: 8px; }
+  .mole-companion__button { width: 88px; }
+  .mole-bubble { max-width: min(76vw, 260px); font-size: 14px; }
+  /* Signed in, the phone tab bar owns the bottom edge. Sit above it. */
+  .mole-companion--app { bottom: calc(66px + env(safe-area-inset-bottom)); }
 }

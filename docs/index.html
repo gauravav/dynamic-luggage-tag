@@ -34,8 +34,7 @@
     padding: 28px 18px 40px 24px; border-right: 1px solid var(--paper-line);
   }
   .toc .brand { font-family: var(--serif); font-weight: 600; font-size: 16px; display: flex; gap: 9px; align-items: center; margin-bottom: 22px; text-decoration: none; color: var(--ink); }
-  .toc .mark { width: 18px; height: 23px; border-radius: 3px; border: 1px solid var(--paper-line);
-    background: repeating-linear-gradient(135deg, var(--forest) 0 3px, transparent 3px 7px), var(--paper-deep); }
+  .toc .mark { width: 22px; height: 22px; flex-shrink: 0; }
   .toc h4 { font: 500 12px var(--mono); color: var(--brass); text-transform: lowercase; margin: 20px 0 6px; }
   .toc ol { list-style: none; margin: 0; padding: 0; }
   .toc li a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: 14px; }
@@ -114,7 +113,7 @@
 <div class="layout">
 
 <nav class="toc" aria-label="Contents">
-  <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Page tour</a>
+  <a class="brand" href="#top"><svg class="mark" viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><ellipse cx="22" cy="17" rx="4.4" ry="4.8" fill="#4A4036"/><ellipse cx="42" cy="17" rx="4.4" ry="4.8" fill="#4A4036"/><circle cx="32" cy="24" r="15.5" fill="#6B5F52"/><circle cx="25.5" cy="21" r="4.6" fill="#fff"/><circle cx="38.5" cy="21" r="4.6" fill="#fff"/><circle cx="25.5" cy="21.4" r="2.4" fill="#242017"/><circle cx="38.5" cy="21.4" r="2.4" fill="#242017"/><path d="M25 30C25 24 39 24 39 30C39 35 36 38 32 38C28 38 25 35 25 30Z" fill="#C9A08C"/><ellipse cx="32" cy="34" rx="3.6" ry="2.7" fill="#6E4F42"/><clipPath id="dm"><rect x="14" y="36" width="36" height="26" rx="5"/></clipPath><rect x="14" y="36" width="36" height="26" rx="5" fill="#EDF1EC" stroke="#B9C7BF" stroke-width="1.5"/><g clip-path="url(#dm)"><path d="M8 60L30 32M20 68L44 34M34 70L58 38" stroke="#2F5D4E" stroke-width="5" fill="none"/><path d="M14 68L38 34" stroke="#8C6221" stroke-width="5" fill="none"/></g><ellipse cx="16" cy="37" rx="6" ry="4.6" fill="#4A4036"/><ellipse cx="48" cy="37" rx="6" ry="4.6" fill="#4A4036"/></svg>Page tour</a>
   <h4>public site</h4>
   <ol><li><a href="#landing">Landing</a></li><li><a href="#not-found">Not found</a></li></ol>
   <h4>account access</h4>

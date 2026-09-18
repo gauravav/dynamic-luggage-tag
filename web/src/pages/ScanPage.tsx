@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError, api, type ScanPage as ScanPageData, type Tag } from '../api/client'
 import { SiteHeader } from '../components/Layout'
+import { MoleCompanion } from '../components/MoleCompanion'
 import { TagArt } from '../components/TagArt'
 import { MessageSent, PinDrop, SwingingTag } from '../components/illustrations'
 import { BusyLabel, Reveal, SendLabel } from '../components/motion'
@@ -110,6 +111,7 @@ export function ScanPage() {
     <div className="shell">
       <SiteHeader />
       <main id="main">{renderBody()}</main>
+      <MoleCompanion signedIn={Boolean(user)} />
     </div>
   )
 

@@ -105,6 +105,10 @@ export function Dashboard() {
   }
 
   const lostCount = tags?.filter((tag) => tag.status === 'lost').length ?? 0
+  // Only tags set to publish the name expose it to whoever holds a code. The
+  // rest release it into a conversation, so the warning must not say otherwise.
+  const broadcasting =
+    tags?.filter((tag) => tag.status === 'lost' && tag.name_disclosure === 'always').length ?? 0
 
   return (
     <div className="page wrap">
@@ -161,8 +165,12 @@ export function Dashboard() {
       <AnimatePresence>
         {lostCount > 0 && (
           <Notice kind="warn" key="lost">
-            {lostCount === 1 ? 'One bag is' : `${lostCount} bags are`} marked lost. Your name and a
-            message link are visible to anyone who scans {lostCount === 1 ? 'it' : 'them'}.
+            {lostCount === 1 ? 'One bag is' : `${lostCount} bags are`} marked lost.{' '}
+            {broadcasting > 0
+              ? `Your name is visible to anyone who scans ${
+                  broadcasting === 1 ? 'it' : 'them'
+                }.`
+              : 'A finder can message you; your name is released when you reply.'}
           </Notice>
         )}
       </AnimatePresence>

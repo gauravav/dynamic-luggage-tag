@@ -1,21 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dynamic Luggage Tag">
   <!--
-    A luggage tag on a dark field, with the diagonal weave the app's own
-    designs are built from. The same two marks as the header's brand square,
-    at a size where only two marks survive: the tag's silhouette, and the
-    pattern that is the whole point of it.
+    The mascot, at the one size that matters. Everything that does not survive
+    16 pixels is gone: what is left is a cream tag, a dark head over it, two
+    eyes and a snout. The diagonal weave stays because it is the product, and
+    the paws stay because they are what makes it a mole holding something
+    rather than an animal behind a wall.
   -->
   <title>Dynamic Luggage Tag</title>
   <rect width="64" height="64" rx="14" fill="#1F4034"/>
+
+  <!-- Head, behind the tag. -->
+  <ellipse cx="22" cy="17" rx="4.4" ry="4.8" fill="#4A4036"/>
+  <ellipse cx="42" cy="17" rx="4.4" ry="4.8" fill="#4A4036"/>
+  <circle cx="32" cy="24" r="15.5" fill="#6B5F52"/>
+  <circle cx="25.5" cy="21" r="4.6" fill="#FFFFFF"/>
+  <circle cx="38.5" cy="21" r="4.6" fill="#FFFFFF"/>
+  <circle cx="25.5" cy="21.4" r="2.4" fill="#242017"/>
+  <circle cx="38.5" cy="21.4" r="2.4" fill="#242017"/>
+  <path d="M25 30 C25 24 39 24 39 30 C39 35 36 38 32 38 C28 38 25 35 25 30 Z" fill="#C9A08C"/>
+  <ellipse cx="32" cy="34" rx="3.6" ry="2.7" fill="#6E4F42"/>
+
+  <!-- The tag it is holding. -->
   <g>
-    <clipPath id="tag">
-      <rect x="14" y="8" width="36" height="48" rx="7"/>
-    </clipPath>
-    <rect x="14" y="8" width="36" height="48" rx="7" fill="#FAF6EC"/>
-    <g clip-path="url(#tag)">
-      <path d="M9 41 L39 5 M21 53 L51 17 M33 65 L63 29" stroke="#2F5D4E" stroke-width="5" fill="none"/>
-      <path d="M15 53 L45 17" stroke="#8C6221" stroke-width="5" fill="none"/>
+    <clipPath id="t"><rect x="14" y="36" width="36" height="26" rx="5"/></clipPath>
+    <rect x="14" y="36" width="36" height="26" rx="5" fill="#FAF6EC"/>
+    <g clip-path="url(#t)">
+      <path d="M8 60 L30 32 M20 68 L44 34 M34 70 L58 38" stroke="#2F5D4E" stroke-width="5" fill="none"/>
+      <path d="M14 68 L38 34" stroke="#8C6221" stroke-width="5" fill="none"/>
     </g>
-    <circle cx="32" cy="17" r="3.6" fill="#1F4034"/>
   </g>
+
+  <!-- Paws over the edge. -->
+  <ellipse cx="16" cy="37" rx="6" ry="4.6" fill="#4A4036"/>
+  <ellipse cx="48" cy="37" rx="6" ry="4.6" fill="#4A4036"/>
 </svg>

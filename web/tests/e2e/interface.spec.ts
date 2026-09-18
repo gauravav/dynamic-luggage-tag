@@ -691,3 +691,65 @@ test.describe('pre-issued tags', () => {
     expect([401, 404]).toContain(response.status())
   })
 })
+
+test.describe('the mole', () => {
+  test.use({ storageState: SIGNED_OUT })
+
+  /**
+   * It has to be present, say something true about the page, and — the part
+   * that matters most for a mascot — be possible to send away for good.
+   */
+  test('greets on the landing page and can be sent away for good', async ({ page }) => {
+    await page.goto(APP)
+    const mole = page.locator('.mole-companion__button')
+    await expect(mole).toBeVisible()
+
+    // It introduces itself without being asked.
+    await expect(page.getByText(/I look after luggage tags/)).toBeVisible({ timeout: 8000 })
+
+    // Tapping asks for the next thing it knows.
+    await mole.click() // closes the greeting
+    await mole.click() // first tip
+    await expect(page.locator('.mole-bubble')).toBeVisible()
+
+    await page.getByRole('button', { name: /Don’t show me again/ }).click()
+    await expect(page.locator('.mole-companion')).toHaveCount(0)
+
+    // And it stays gone.
+    await page.reload()
+    await page.waitForTimeout(2500)
+    await expect(page.locator('.mole-companion')).toHaveCount(0)
+  })
+
+  test('says something different on the finder’s page, and nothing on sign-in', async ({
+    page,
+  }) => {
+    // Sign-in has a mole of its own doing a different job.
+    await page.goto(`${APP}/login`)
+    await page.waitForTimeout(2200)
+    await expect(page.locator('.mole-companion')).toHaveCount(0)
+    await expect(page.locator('.mole--signin')).toBeVisible()
+  })
+
+  test('clears the phone tab bar when signed in', async ({ browser }) => {
+    // Explicitly signed in: this describe block is signed out by default, and
+    // a signed-out phone has no tab bar to clear.
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 780 },
+      storageState: 'tests/e2e/.auth/owner.json',
+    })
+    const page = await context.newPage()
+    await page.goto(`${APP}/app`)
+    await page.waitForTimeout(2600)
+
+    const mole = page.locator('.mole-companion__button')
+    await expect(mole).toBeVisible()
+    const [moleBox, navBox] = await Promise.all([
+      mole.boundingBox(),
+      page.locator('.bottom-nav').boundingBox(),
+    ])
+    // Its lowest visible point must sit above the tab bar's top edge.
+    expect(moleBox!.y).toBeLessThan(navBox!.y)
+    await context.close()
+  })
+})
