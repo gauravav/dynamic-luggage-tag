@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { ResendVerification } from '../components/ResendVerification'
 import { AnimatePresence, motion } from 'motion/react'
+import { CodeInput } from '../components/CodeInput'
+import { CodeJourney, JOURNEY_MS, type JourneyPhase } from '../components/CodeJourney'
 import { LuggageMole, type MoleState } from '../components/LuggageMole'
 import { BusyLabel } from '../components/motion'
 import { Field, Notice } from '../components/ui'
@@ -22,6 +24,10 @@ export function Login() {
   const [recoveryCode, setRecoveryCode] = useState('')
   const [needsSecondFactor, setNeedsSecondFactor] = useState(false)
   const [useRecovery, setUseRecovery] = useState(false)
+  // Issued by the password step so the code step is not asked to prove it is
+  // human all over again.
+  const [loginTicket, setLoginTicket] = useState<string | null>(null)
+  const [journey, setJourney] = useState<JourneyPhase>('idle')
   const [message, setMessage] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -45,37 +51,66 @@ export function Login() {
   // manager rather than typed.
   const gaze = Math.min(1, email.length / 26)
 
-  async function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
+    void attempt()
+  }
+
+  /**
+   * One sign-in attempt.
+   *
+   * `code` is passed explicitly by the six-box input, which knows the finished
+   * code a render before state does. Reading it from state here instead would
+   * submit the previous value — five digits, or none at all on the first try.
+   */
+  async function attempt(code?: string) {
+    if (busy) return
+    const submittedCode = code ?? totpCode
     setBusy(true)
     setMessage(null)
     setErrorCode(null)
+
+    // The cases only fly when there is a code to send them off with.
+    const sendingCode = needsSecondFactor && !useRecovery && Boolean(submittedCode)
+    if (sendingCode) setJourney('flying')
+
     try {
       const result = await signIn(
         email,
         password,
         {
-          ...(totpCode ? { totpCode } : {}),
+          ...(submittedCode ? { totpCode: submittedCode } : {}),
           ...(recoveryCode ? { recoveryCode } : {}),
         },
         turnstile.token,
+        loginTicket,
       )
       if (result.status === 'totp_required') {
         setNeedsSecondFactor(true)
+        setLoginTicket(result.loginTicket)
         return
+      }
+      if (sendingCode) {
+        // Let the bags come off the plane before the page changes under them.
+        setJourney('collected')
+        await new Promise((resolve) => setTimeout(resolve, JOURNEY_MS))
       }
       navigate(from, { replace: true })
     } catch (error) {
+      if (sendingCode) setJourney('taken')
       setMessage(error instanceof ApiError ? error.message : 'Something went wrong.')
       setErrorCode(error instanceof ApiError ? error.code : null)
       // Clear only the codes: making someone retype a long password because a
       // six-digit code was mistyped is its own small hostility.
       setTotpCode('')
       setRecoveryCode('')
+      // A spent ticket cannot be reused, so the next attempt falls back to the
+      // ordinary check rather than silently failing on a stale one.
+      setLoginTicket(null)
     } finally {
       setBusy(false)
-      // Every attempt spends the token, including the password step before a
-      // two-factor prompt, so the code step gets a fresh check.
+      // Tokens are single-use. The password step spends one; the code step
+      // rides on the ticket instead.
       turnstile.reset()
     }
   }
@@ -160,6 +195,7 @@ export function Login() {
             <Notice kind="info">
               Enter the six-digit code from your authenticator app.
             </Notice>
+            <CodeJourney phase={journey} />
             <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={useRecovery ? 'recovery' : 'totp'}
@@ -178,14 +214,14 @@ export function Login() {
                 autoComplete="one-time-code"
               />
             ) : (
-              <Field
+              <CodeInput
                 label="Authentication code"
-                name="totp_code"
                 value={totpCode}
                 onChange={setTotpCode}
-                autoComplete="one-time-code"
-                placeholder="123456"
-                maxLength={8}
+                onComplete={(value) => void attempt(value)}
+                disabled={busy}
+                autoFocus
+                error={errorCode === 'invalid_code'}
               />
             )}
             </motion.div>
