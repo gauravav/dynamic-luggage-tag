@@ -90,8 +90,46 @@ async function resetAccount(): Promise<void> {
   await context.dispose()
 }
 
+/**
+ * Signs in to an account that already exists, when only its session has died.
+ *
+ * Without this the only recovery is registering a new address — and the API
+ * was started knowing the old one, so the operator surface would 404 for the
+ * rest of the run.
+ */
+async function signInAgain(email: string): Promise<boolean> {
+  const context = await request.newContext({ extraHTTPHeaders: { Origin: APP } })
+  try {
+    const response = await context.post(`${API}/auth/login`, {
+      data: { email, password: PASSWORD },
+    })
+    if (!response.ok()) return false
+    const body = await response.json()
+    if (body.status === 'totp_required') {
+      throw new Error(
+        `${email} has two-factor on and no live session; clear tests/e2e/.auth and rerun`,
+      )
+    }
+    await mkdir(dirname(STATE_FILE), { recursive: true })
+    await writeFile(STATE_FILE, JSON.stringify(await context.storageState()))
+    await writeFile(ACCOUNT_FILE, JSON.stringify({ email, csrf: body.csrf_token }))
+    return true
+  } finally {
+    await context.dispose()
+  }
+}
+
 export default async function globalSetup() {
   if (await reusableSession()) {
+    await resetAccount()
+    return
+  }
+
+  // Decided by infra/scripts/e2e.sh and given to the API at boot, so the two
+  // sides cannot disagree about which account is the operator.
+  const email = process.env.DLT_E2E_EMAIL ?? `e2e-${Date.now()}@example.com`
+
+  if (await signInAgain(email)) {
     await resetAccount()
     return
   }
@@ -99,7 +137,6 @@ export default async function globalSetup() {
   // Absolute URLs, not a baseURL: a leading-slash path would replace the
   // /api/v1 prefix rather than extend it.
   const context = await request.newContext({ extraHTTPHeaders: { Origin: APP } })
-  const email = `e2e-${Date.now()}@example.com`
 
   const registered = await context.post(`${API}/auth/register`, {
     data: { email, password: PASSWORD, name: 'Gaurav Avula', accept_terms: true },

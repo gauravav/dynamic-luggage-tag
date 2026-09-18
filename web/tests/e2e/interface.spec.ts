@@ -478,9 +478,10 @@ test.describe('two-factor', () => {
       await fresh.click('button[type="submit"]')
 
       await expect(fresh.getByText('Enter the six-digit code')).toBeVisible()
-      await fresh.fill('#totp_code', totp(secret))
-      await fresh.click('button[type="submit"]')
-      await fresh.waitForURL('**/app')
+      // Six boxes now, and filling the first distributes the whole code and
+      // submits itself — see components/CodeInput.tsx.
+      await fresh.locator('.case input').first().fill(totp(secret))
+      await fresh.waitForURL('**/app', { timeout: 20_000 })
       await elsewhere.close()
     } finally {
       // Always, even if the above failed part-way: a shared account left with
@@ -721,6 +722,30 @@ test.describe('the mole', () => {
     await expect(page.locator('.mole-companion')).toHaveCount(0)
   })
 
+  test('and can be brought back from settings', async ({ browser }) => {
+    // Signed in, because that is where the setting lives.
+    const context = await browser.newContext({ storageState: 'tests/e2e/.auth/owner.json' })
+    const page = await context.newPage()
+
+    await page.goto(`${APP}/app`)
+    await expect(page.locator('.mole-companion__button')).toBeVisible()
+    await page.getByText(/I look after|Your bags/).first().waitFor({ timeout: 8000 })
+    await page.getByRole('button', { name: /Don’t show me again/ }).click()
+    await expect(page.locator('.mole-companion')).toHaveCount(0)
+
+    await page.goto(`${APP}/app/settings`)
+    const showMole = page.getByLabel(/Show the mole/)
+    await expect(showMole).not.toBeChecked()
+    // The switch is controlled by shared state, so it comes back at once
+    // rather than after a reload.
+    await showMole.click()
+    await expect(page.locator('.mole-companion__button')).toBeVisible()
+
+    await page.reload()
+    await expect(page.locator('.mole-companion__button')).toBeVisible()
+    await context.close()
+  })
+
   test('says something different on the finder’s page, and nothing on sign-in', async ({
     page,
   }) => {
@@ -753,3 +778,131 @@ test.describe('the mole', () => {
     await context.close()
   })
 })
+
+test.describe('the authentication code', () => {
+  // Signed in: these drive two-factor from Settings, and open their own
+  // signed-out context for the sign-in they are actually testing.
+  /**
+   * Two-factor sign-in is two requests. It used to demand a bot check on each,
+   * so one sign-in meant proving twice, thirty seconds apart, that you were a
+   * person. The code step now rides on a ticket from the password step.
+   *
+   * Turnstile is not configured in this environment, so what is checked here
+   * is the shape the browser produces: a ticket comes back with the prompt,
+   * and goes out with the code.
+   */
+  test('carries the password step’s ticket into the code step', async ({ page, request }) => {
+    const { email } = await owner()
+    const secret = await enableTwoFactor(page, request)
+
+    const context = await page.context().browser()!.newContext({ storageState: SIGNED_OUT })
+    const fresh = await context.newPage()
+
+    const prompt = fresh.waitForResponse(
+      (response) => response.url().includes('/auth/login') && response.status() === 200,
+    )
+    await fresh.goto(`${APP}/login`)
+    await fresh.fill('#email', email)
+    await fresh.fill('#password', PASSWORD)
+    await fresh.click('button[type="submit"]')
+
+    const issued = await (await prompt).json()
+    expect(issued.status).toBe('totp_required')
+    expect(issued.login_ticket, 'the password step must hand back a ticket').toBeTruthy()
+
+    // The six boxes, and the code going out with the ticket on it.
+    await expect(fresh.locator('.case input')).toHaveCount(6)
+    const submitted = fresh.waitForRequest(
+      (req) => req.url().includes('/auth/login') && req.method() === 'POST',
+    )
+    await fresh.locator('.case input').first().fill(totp(secret))
+    const sent = JSON.parse((await submitted).postData() ?? '{}')
+    expect(sent.login_ticket).toBe(issued.login_ticket)
+    expect(sent.totp_code).toHaveLength(6)
+
+    await fresh.waitForURL('**/app', { timeout: 15_000 })
+    await context.close()
+    await disableTwoFactor(page)
+  })
+
+  test('sends the cases on a journey, and shows who collects them', async ({ page, request }) => {
+    const secret = await enableTwoFactor(page, request)
+    const { email } = await owner()
+
+    const context = await page.context().browser()!.newContext({ storageState: SIGNED_OUT })
+    const fresh = await context.newPage()
+    await fresh.goto(`${APP}/login`)
+    await fresh.fill('#email', email)
+    await fresh.fill('#password', PASSWORD)
+    await fresh.click('button[type="submit"]')
+    await fresh.getByText('Enter the six-digit code').waitFor()
+
+    // A wrong code: somebody else walks off with the bags.
+    await fresh.locator('.case input').first().fill('000000')
+    await expect(fresh.getByText('That code is not valid.')).toBeVisible({ timeout: 10_000 })
+    await expect(fresh.locator('.journey')).toBeVisible()
+    await expect(fresh.locator('.code-input--error')).toBeVisible()
+
+    // The right one: they come home.
+    await fresh.locator('.case input').first().fill(totp(secret))
+    await fresh.waitForURL('**/app', { timeout: 15_000 })
+    await context.close()
+    await disableTwoFactor(page)
+  })
+})
+
+test.describe('changing a password', () => {
+  test('will not submit until both copies match', async ({ page }) => {
+    await page.goto(`${APP}/app/settings`)
+    const change = page.getByRole('button', { name: /Change password/ })
+
+    await page.fill('#current_password', PASSWORD)
+    await page.fill('#new_password', 'a completely different passphrase')
+    await expect(change).toBeDisabled()
+
+    await page.fill('#confirm_password', 'a completely different passphras')
+    await expect(page.getByText('These two do not match.')).toBeVisible()
+    await expect(change).toBeDisabled()
+
+    await page.fill('#confirm_password', 'a completely different passphrase')
+    await expect(page.getByText('These two do not match.')).toHaveCount(0)
+    await expect(change).toBeEnabled()
+  })
+})
+
+/**
+ * Waits for the two-factor card to have rendered before reading its state.
+ *
+ * Checking for the off-switch straight after `goto` finds nothing on a page
+ * that has not painted yet, which reads as "two-factor is off" and then hangs
+ * clicking a button that is not there.
+ */
+async function twoFactorIsOn(page: import('@playwright/test').Page): Promise<boolean> {
+  await page.goto(`${APP}/app/settings`)
+  await expect(page.getByRole('heading', { name: 'Two-factor authentication' })).toBeVisible()
+  await expect(page.getByText(/^(On|Off)\./)).toBeVisible()
+  return (await page.getByText('On. A code from your authenticator').count()) > 0
+}
+
+/** Turns two-factor on for the shared account and returns its secret. */
+async function enableTwoFactor(
+  page: import('@playwright/test').Page,
+  _request: unknown,
+): Promise<string> {
+  if (await twoFactorIsOn(page)) await disableTwoFactor(page)
+
+  const setup = page.waitForResponse('**/auth/totp/setup')
+  await page.getByRole('button', { name: 'Set up two-factor' }).click()
+  const secret = secretFromUri((await (await setup).json()).otpauth_uri)
+  await page.fill('#totp_code', totp(secret))
+  await page.getByRole('button', { name: 'Turn on two-factor' }).click()
+  await expect(page.getByText('Save these recovery codes now.')).toBeVisible()
+  return secret
+}
+
+async function disableTwoFactor(page: import('@playwright/test').Page): Promise<void> {
+  if (!(await twoFactorIsOn(page))) return
+  await page.fill('#totp_password', PASSWORD)
+  await page.getByRole('button', { name: 'Turn off two-factor' }).click()
+  await expect(page.getByText('Off. Your password alone is enough')).toBeVisible()
+}
