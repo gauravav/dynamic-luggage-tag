@@ -90,6 +90,9 @@ class LoginIn(Payload):
     password: str = Field(min_length=1, max_length=1024)
     totp_code: str | None = Field(default=None, max_length=12)
     recovery_code: str | None = Field(default=None, max_length=64)
+    # Issued by the password step of a two-factor sign-in, so the code step
+    # does not have to pass the bot check a second time.
+    login_ticket: str | None = Field(default=None, max_length=256)
 
 
 class PasswordChangeIn(Payload):

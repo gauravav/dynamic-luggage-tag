@@ -125,6 +125,35 @@ class EmailToken(Base):
     used_at: Mapped[dt.datetime | None] = timestamp()
 
 
+class PendingLogin(Base):
+    """A password check that is waiting on a second factor.
+
+    Signing in with two-factor on is two requests: the password, then the code.
+    Both used to demand their own bot check, so the same person proved they
+    were a person twice, thirty seconds apart, to complete one sign-in.
+
+    The first request issues one of these. Presenting it with the code is what
+    lets the second request skip the check — it is proof that a human passed
+    one moments ago, for this account. It is not a credential: on its own it
+    grants nothing, because the second request still carries the password and
+    still has to produce a valid code.
+
+    Single-use and short-lived, and only the hash is stored, like every other
+    bearer token here.
+    """
+
+    __tablename__ = "pending_logins"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[bytes] = digest(unique=True)
+    created_at: Mapped[dt.datetime] = timestamp(default_now=True, nullable=False)
+    expires_at: Mapped[dt.datetime] = timestamp(nullable=False, index=True)
+    used_at: Mapped[dt.datetime | None] = timestamp()
+
+
 class RecoveryCode(Base):
     """One-time code for signing in when the authenticator is unavailable."""
 

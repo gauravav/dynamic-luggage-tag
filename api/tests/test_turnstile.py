@@ -216,3 +216,173 @@ def test_signup_completes_end_to_end_with_verification_on(client, outbox, turnst
     assert _register(client, "pass:register").status_code == 202
     response = client.post("/api/v1/auth/verify-email", json={"token": token_from(outbox)})
     assert response.status_code == 200
+
+
+class TestTwoFactorAsksOnce:
+    """Two-factor makes signing in two requests, not two sign-ins.
+
+    Both halves used to demand their own bot check, so the same person proved
+    they were a person twice, thirty seconds apart, to get through one door.
+    """
+
+    PASSWORD = "correct horse battery staple"
+
+    def _enrol(self, client, app, outbox, turnstile_on):
+        """Registers an account with two-factor on. Returns its TOTP secret.
+
+        Not conftest's helper: that one registers without a Turnstile token,
+        which is exactly what this fixture refuses.
+        """
+        import pyotp
+        from conftest import auth_headers, token_from
+
+        email = "dora@example.com"
+        assert (
+            client.post(
+                "/api/v1/auth/register",
+                json={"email": email, "password": self.PASSWORD},
+                headers={"X-Turnstile-Token": "pass:register"},
+            ).status_code
+            == 202
+        )
+        verified = client.post("/api/v1/auth/verify-email", json={"token": token_from(outbox)})
+        assert verified.status_code == 200, verified.get_json()
+        csrf = verified.get_json()["csrf_token"]
+
+        secret = client.post("/api/v1/auth/totp/setup", headers=auth_headers(csrf)).get_json()[
+            "secret"
+        ]
+        assert (
+            client.post(
+                "/api/v1/auth/totp/enable",
+                json={"code": pyotp.TOTP(secret).now()},
+                headers=auth_headers(csrf),
+            ).status_code
+            == 200
+        )
+        client.post("/api/v1/auth/logout", headers=auth_headers(csrf))
+        return email, secret
+
+    def _password_step(self, client, email, token="pass:login"):
+        return client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": self.PASSWORD},
+            headers={"X-Turnstile-Token": token} if token else {},
+        )
+
+    def test_the_code_step_does_not_ask_again(self, client, app, outbox, turnstile_on):
+        import pyotp
+
+        email, secret = self._enrol(client, app, outbox, turnstile_on)
+
+        first = self._password_step(client, email)
+        assert first.get_json()["status"] == "totp_required"
+        ticket = first.get_json()["login_ticket"]
+        assert ticket
+
+        # No Turnstile token at all on the second request.
+        second = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": email,
+                "password": self.PASSWORD,
+                "totp_code": pyotp.TOTP(secret).now(),
+                "login_ticket": ticket,
+            },
+        )
+        assert second.status_code == 200, second.get_json()
+        assert second.get_json()["user"]["email"] == email
+
+    def test_without_a_ticket_the_code_step_still_asks(self, client, app, outbox, turnstile_on):
+        """The exemption is the ticket, not the presence of a code."""
+        import pyotp
+
+        email, secret = self._enrol(client, app, outbox, turnstile_on)
+        self._password_step(client, email)
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": email,
+                "password": self.PASSWORD,
+                "totp_code": pyotp.TOTP(secret).now(),
+            },
+        )
+        assert response.status_code == 403
+        assert response.get_json()["error"]["code"] == "verification_failed"
+
+    def test_a_ticket_is_single_use(self, client, app, outbox, turnstile_on):
+        import pyotp
+
+        email, secret = self._enrol(client, app, outbox, turnstile_on)
+        ticket = self._password_step(client, email).get_json()["login_ticket"]
+
+        def finish():
+            return client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": email,
+                    "password": self.PASSWORD,
+                    "totp_code": pyotp.TOTP(secret).now(),
+                    "login_ticket": ticket,
+                },
+            )
+
+        assert finish().status_code == 200
+        client.post("/api/v1/auth/logout", headers={"Origin": "http://localhost:5173"})
+        # Spent. The second attempt falls back to the ordinary check, and there
+        # is no token on this request.
+        assert finish().status_code == 403
+
+    def test_a_ticket_is_useless_for_another_account(self, client, app, outbox, turnstile_on):
+        """It waives a bot check for the account it was issued to, not any."""
+        email, _secret = self._enrol(client, app, outbox, turnstile_on)
+        ticket = self._password_step(client, email).get_json()["login_ticket"]
+
+        other = app.test_client()
+        other.post(
+            "/api/v1/auth/register",
+            json={"email": "eve@example.com", "password": self.PASSWORD},
+            headers={"X-Turnstile-Token": "pass:register"},
+        )
+        response = other.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "eve@example.com",
+                "password": self.PASSWORD,
+                "login_ticket": ticket,
+            },
+        )
+        assert response.status_code == 403
+
+    def test_a_ticket_alone_does_not_sign_anyone_in(self, client, app, outbox, turnstile_on):
+        """It buys silence from Cloudflare. It is not a credential."""
+        email, _secret = self._enrol(client, app, outbox, turnstile_on)
+        ticket = self._password_step(client, email).get_json()["login_ticket"]
+
+        wrong_password = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "not the password", "login_ticket": ticket},
+        )
+        assert wrong_password.status_code == 401
+
+    def test_a_new_password_attempt_invalidates_the_previous_ticket(
+        self, client, app, outbox, turnstile_on
+    ):
+        import pyotp
+
+        email, secret = self._enrol(client, app, outbox, turnstile_on)
+        first = self._password_step(client, email).get_json()["login_ticket"]
+        second = self._password_step(client, email).get_json()["login_ticket"]
+        assert first != second
+
+        stale = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": email,
+                "password": self.PASSWORD,
+                "totp_code": pyotp.TOTP(secret).now(),
+                "login_ticket": first,
+            },
+        )
+        assert stale.status_code == 403

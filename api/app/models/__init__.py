@@ -15,7 +15,7 @@ from .tag import (
     Tag,
     TagClaim,
 )
-from .user import AuditEvent, EmailToken, RecoveryCode, Session, User
+from .user import AuditEvent, EmailToken, PendingLogin, RecoveryCode, Session, User
 
 __all__ = [
     "NAME_ALWAYS",
@@ -28,6 +28,7 @@ __all__ = [
     "SCHEMA",
     "Base",
     "EmailToken",
+    "PendingLogin",
     "RecoveryCode",
     "RelayMessage",
     "RelayThread",

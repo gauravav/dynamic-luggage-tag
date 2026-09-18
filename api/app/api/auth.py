@@ -13,6 +13,7 @@ flat.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 import pyotp
 from flask import Blueprint, current_app, g, jsonify, request
@@ -21,7 +22,7 @@ from sqlalchemy import select
 from ..core import qr
 from ..errors import ApiError
 from ..extensions import app_config, db_session, keyring, limiter
-from ..models import Session, User, utcnow
+from ..models import PendingLogin, Session, User, utcnow
 from ..schemas import (
     EmailVerifyIn,
     LoginIn,
@@ -43,7 +44,14 @@ from ..security.authz import (
     require_user,
     user_crypto,
 )
-from ..security.crypto import DecryptionError, decrypt_field, encrypt_field, field_aad
+from ..security.crypto import (
+    DecryptionError,
+    decrypt_field,
+    encrypt_field,
+    field_aad,
+    hash_token,
+    new_token,
+)
 from ..security.passwords import (
     PasswordPolicyError,
     check_password_policy,
@@ -267,14 +275,30 @@ def resend_verification():
 # --------------------------------------------------------------------------
 
 
+# How long the second half of a two-factor sign-in has to arrive. Long enough
+# to fetch a phone from another room, short enough that a ticket left in a
+# browser's memory is not worth much.
+PENDING_LOGIN_TTL = dt.timedelta(minutes=5)
+
+
 @bp.post("/login")
 @limiter.limit("10 per 15 minutes; 50 per day")
-@turnstile.require("login")
 def login():
     payload = parse(request, LoginIn)
     config = app_config()
     db = db_session()
     hasher = _hasher()
+
+    # The bot check belongs on the *attempt*, and a two-factor sign-in is one
+    # attempt spread over two requests. A valid ticket says a human passed the
+    # check moments ago for this account, so the code step does not ask again.
+    #
+    # The ticket is not what is being trusted here: this request still carries
+    # the password, still verifies it below, and still has to produce a working
+    # code. All the ticket buys is silence from Cloudflare.
+    ticket = _redeem_login_ticket(db, payload, config=config) if payload.login_ticket else None
+    if ticket is None:
+        turnstile.enforce("login")
 
     user = accounts.find_by_email(db, payload.email, config=config)
 
@@ -331,7 +355,10 @@ def login():
         # Only reachable with the correct password, so the prompt reveals
         # nothing the caller did not already know.
         if not payload.totp_code and not payload.recovery_code:
-            return jsonify({"status": "totp_required"}), 200
+            # Hand back a ticket so the code step does not repeat the check.
+            return jsonify(
+                {"status": "totp_required", "login_ticket": _issue_login_ticket(db, user, config)}
+            ), 200
         if not _second_factor_ok(db, user, payload, hasher=hasher):
             _register_failure(db, user, config=config)
             audit.record(
@@ -366,6 +393,54 @@ def login():
     response = jsonify({"user": _user_summary(user), "csrf_token": session.csrf_token})
     session_service.attach_cookies(response, session, token, config=config)
     return response
+
+
+def _issue_login_ticket(db, user: User, config) -> str:
+    """Records that this account just passed the password and the bot check."""
+    token = new_token(32)
+    # One at a time: a second password attempt invalidates the first ticket,
+    # so a ticket cannot be stockpiled by repeatedly submitting the password.
+    for stale in db.scalars(
+        select(PendingLogin).where(PendingLogin.user_id == user.id, PendingLogin.used_at.is_(None))
+    ).all():
+        stale.used_at = utcnow()
+
+    db.add(
+        PendingLogin(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            token_hash=hash_token(config.token_pepper, "pending_login", token),
+            created_at=utcnow(),
+            expires_at=utcnow() + PENDING_LOGIN_TTL,
+        )
+    )
+    db.commit()
+    return token
+
+
+def _redeem_login_ticket(db, payload: LoginIn, *, config) -> PendingLogin | None:
+    """Spends a ticket, if it is live and belongs to the account being named.
+
+    Returns None for anything wrong with it — expired, spent, unknown, or
+    issued to a different account — and the caller then falls back to the
+    ordinary bot check rather than refusing outright. A bad ticket should cost
+    someone a checkbox, not their sign-in.
+    """
+    record = db.scalar(
+        select(PendingLogin).where(
+            PendingLogin.token_hash
+            == hash_token(config.token_pepper, "pending_login", payload.login_ticket or "")
+        )
+    )
+    if record is None or record.used_at is not None or record.expires_at <= utcnow():
+        return None
+
+    owner = accounts.find_by_email(db, payload.email, config=config)
+    if owner is None or owner.id != record.user_id:
+        return None
+
+    record.used_at = utcnow()
+    return record
 
 
 def _second_factor_ok(db, user: User, payload: LoginIn, *, hasher) -> bool:

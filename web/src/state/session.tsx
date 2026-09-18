@@ -27,6 +27,7 @@ interface SessionState {
     password: string,
     codes?: TwoFactor,
     turnstileToken?: string | null,
+    loginTicket?: string | null,
   ) => Promise<SignInResult>
   signOut: () => Promise<void>
   setUser: (user: User | null) => void
@@ -37,7 +38,14 @@ export interface TwoFactor {
   recoveryCode?: string
 }
 
-export type SignInResult = { status: 'signed_in' } | { status: 'totp_required' }
+export type SignInResult =
+  | { status: 'signed_in' }
+  /**
+   * The password was right and a second factor is needed. The ticket proves
+   * the bot check was passed for this account moments ago, so the code step
+   * does not have to ask again.
+   */
+  | { status: 'totp_required'; loginTicket: string | null }
 
 const SessionContext = createContext<SessionState | null>(null)
 
@@ -62,17 +70,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [refresh])
 
-  const signIn = useCallback<SessionState['signIn']>(async (email, password, codes, turnstileToken) => {
-    const body = await api.post<{ user?: User; status?: string }>('/auth/login', {
-      email,
-      password,
-      ...(codes?.totpCode ? { totp_code: codes.totpCode } : {}),
-      ...(codes?.recoveryCode ? { recovery_code: codes.recoveryCode } : {}),
-    }, { turnstileToken })
-    if (body.status === 'totp_required') return { status: 'totp_required' }
-    setUser(body.user ?? null)
-    return { status: 'signed_in' }
-  }, [])
+  const signIn = useCallback<SessionState['signIn']>(
+    async (email, password, codes, turnstileToken, loginTicket) => {
+      const body = await api.post<{ user?: User; status?: string; login_ticket?: string }>(
+        '/auth/login',
+        {
+          email,
+          password,
+          ...(codes?.totpCode ? { totp_code: codes.totpCode } : {}),
+          ...(codes?.recoveryCode ? { recovery_code: codes.recoveryCode } : {}),
+          ...(loginTicket ? { login_ticket: loginTicket } : {}),
+        },
+        { turnstileToken },
+      )
+      if (body.status === 'totp_required') {
+        return { status: 'totp_required', loginTicket: body.login_ticket ?? null }
+      }
+      setUser(body.user ?? null)
+      return { status: 'signed_in' }
+    },
+    [],
+  )
 
   const signOut = useCallback(async () => {
     try {

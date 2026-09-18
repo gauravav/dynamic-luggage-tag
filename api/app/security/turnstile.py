@@ -17,6 +17,11 @@ are the only things a finder does before deciding to engage, they carry no
 free text for a spammer to abuse, and gating them would hand every stranger
 who scans a bag to a third party before they have chosen to do anything.
 
+Nor twice in one sign-in. Two-factor makes signing in two requests, and the
+second carries a ticket proving a human passed the check on the first —
+seconds earlier, for the same account. Asking again would be asking the same
+question twice.
+
 Privacy
 -------
 The client IP is not forwarded to Cloudflare in the verification call
@@ -102,6 +107,36 @@ def verify(token: str, *, action: str, config: Config) -> bool:
     return True
 
 
+def enforce(action: str) -> None:
+    """Runs the check for `action`, raising the same errors `require` does.
+
+    Callable from inside a view, for the one place that needs to decide
+    whether the check applies before running it.
+    """
+    from ..extensions import app_config
+
+    config = app_config()
+    if not config.turnstile_enabled:
+        return
+
+    token = request.headers.get(HEADER, "")
+    try:
+        ok = verify(token, action=action, config=config)
+    except TurnstileUnavailable:
+        log.exception("Turnstile verification unavailable")
+        raise ApiError(
+            "verification_unavailable",
+            "We couldn't confirm you're not a bot just now. Please try again.",
+            status=503,
+        ) from None
+    if not ok:
+        raise ApiError(
+            "verification_failed",
+            "Please complete the verification check and try again.",
+            status=403,
+        )
+
+
 def require(action: str) -> Callable:
     """Refuses the request unless it carries a valid token for ``action``.
 
@@ -112,28 +147,7 @@ def require(action: str) -> Callable:
     def decorator(view: Callable) -> Callable:
         @functools.wraps(view)
         def wrapper(*args, **kwargs):
-            from ..extensions import app_config
-
-            config = app_config()
-            if not config.turnstile_enabled:
-                return view(*args, **kwargs)
-
-            token = request.headers.get(HEADER, "")
-            try:
-                ok = verify(token, action=action, config=config)
-            except TurnstileUnavailable:
-                log.exception("Turnstile verification unavailable")
-                raise ApiError(
-                    "verification_unavailable",
-                    "We couldn't confirm you're not a bot just now. Please try again.",
-                    status=503,
-                ) from None
-            if not ok:
-                raise ApiError(
-                    "verification_failed",
-                    "Please complete the verification check and try again.",
-                    status=403,
-                )
+            enforce(action)
             return view(*args, **kwargs)
 
         return wrapper
