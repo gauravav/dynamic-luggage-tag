@@ -6,7 +6,14 @@ import { BusyLabel, Skeleton, Stagger, StaggerItem } from '../components/motion'
 import { PasswordField } from '../components/PasswordStrength'
 import { Field, Notice, Spinner, Toggle } from '../components/ui'
 import { formatDateTime } from '../lib/design'
-import { moleIsHidden, onMolePreferenceChange, setMoleHidden } from '../lib/molePreference'
+import {
+  HOME,
+  moleHasMoved,
+  moleIsHidden,
+  onMolePreferenceChange,
+  setMoleHidden,
+  setMoleSpot,
+} from '../lib/molePreference'
 import { useSession } from '../state/session'
 
 export function Settings() {
@@ -197,16 +204,36 @@ function NotificationSection({
  */
 function MoleToggle() {
   const [hidden, setHidden] = useState(moleIsHidden)
-  useEffect(() => onMolePreferenceChange(() => setHidden(moleIsHidden())), [])
+  const [moved, setMoved] = useState(moleHasMoved)
+  useEffect(
+    () =>
+      onMolePreferenceChange(() => {
+        setHidden(moleIsHidden())
+        setMoved(moleHasMoved())
+      }),
+    [],
+  )
 
   return (
     <div style={{ marginTop: 8 }}>
       <Toggle
         label="Show the mole"
-        hint="The character in the corner, with something to say about each page. Applies to this browser only."
+        hint="The character in the corner, with something to say about each page. Drag it anywhere you like. Applies to this browser only."
         checked={!hidden}
         onChange={(next) => setMoleHidden(!next)}
       />
+      {/* Only once it has been moved: an undo for something nobody did is
+          just another control to read past. */}
+      {moved && (
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          style={{ marginTop: 10 }}
+          onClick={() => setMoleSpot(HOME)}
+        >
+          Put the mole back in its corner
+        </button>
+      )}
     </div>
   )
 }

@@ -15,8 +15,8 @@ export default defineConfig({
   workers: 1,
   // Motion settles in well under this; a generous ceiling keeps a slow
   // machine from failing a test that is only waiting on a spring. The
-  // two-factor flows need more of it: a successful code plays the suitcases
-  // all the way to the carousel before the page moves.
+  // two-factor flows need more of it: a correct code packs the six cases into
+  // one and tags it before the page moves.
   timeout: 70_000,
   expect: { timeout: 10_000 },
   reporter: [['list']],

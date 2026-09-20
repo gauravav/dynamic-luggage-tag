@@ -96,6 +96,36 @@ def verification_email(config: Config, token: str, *, returning: bool = False) -
     )
 
 
+def tag_invitation_email(config: Config, invite: str, *, name: str | None) -> Email:
+    """Invites the buyer of a pre-issued tag to create the account it goes to.
+
+    The tag is printed and on its way, so the link is the whole message: it
+    opens registration with the address and the name already filled in, which
+    is also how the account ends up matching what is printed on the tag.
+    """
+    greeting = f"Hello {name}," if name else "Hello,"
+    return Email(
+        subject="Your luggage tag is on its way",
+        heading="Set up your luggage tag",
+        preheader="Create your account — your tag is already printed.",
+        paragraphs=[
+            greeting,
+            "A Dynamic Luggage Tag has been made for you and is on its way. "
+            "Create your account to activate it, and it will be waiting in "
+            "there with the artwork that is printed on it.",
+            "The link fills in your address and the name on the tag. You only "
+            "need to choose a password.",
+        ],
+        button=("Create my account", _url(config, f"/register?invite={invite}")),
+        footnote=(
+            "If a tag was not ordered for you, you can ignore this email — "
+            "nothing has been created in your name, and the link expires when "
+            "the code is withdrawn."
+        ),
+        accent="forest",
+    )
+
+
 def duplicate_registration_email(config: Config) -> Email:
     """Sent when someone tries to register a verified address.
 

@@ -655,21 +655,26 @@ test.describe('pre-issued tags', () => {
     await expect(page.getByRole('heading', { name: 'Issue a tag' })).toBeVisible()
 
     await page.getByLabel(/email address/i).fill(buyer)
+    await page.getByLabel(/Buyer’s name/).fill('Ada Lovelace')
     await page.getByLabel(/Label/).fill('Ordered tag')
-    await page.getByRole('button', { name: 'Backpack' }).click()
-    await page.getByRole('button', { name: /Issue and print/ }).click()
+    // No icon to pick: that belongs to the owner, once there is one.
+    await expect(page.getByRole('button', { name: 'Backpack' })).toHaveCount(0)
+    await page.getByRole('button', { name: /Issue and invite/ }).click()
 
     // Shown once, with something printable.
     await expect(page.getByRole('heading', { name: 'Ready to print' })).toBeVisible()
+    await expect(page.getByText(/An invitation is on its way/)).toBeVisible()
     const scanUrl = (await page.locator('.code-block').first().innerText()).trim()
     expect(scanUrl).toContain('/t/')
 
-    const download = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Download print PDF' }).click()
-    const file = await download
     const { readFile } = await import('node:fs/promises')
-    const bytes = await readFile(await file.path())
-    expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
+    for (const label of ['Download print PDF', 'Download with trim marks']) {
+      const download = page.waitForEvent('download')
+      await page.getByRole('button', { name: label }).click()
+      const file = await download
+      const bytes = await readFile(await file.path())
+      expect(bytes.subarray(0, 5).toString(), label).toBe('%PDF-')
+    }
 
     // Scanned before anyone has signed up: honest about what it is.
     const outside = await browser.newContext({ storageState: SIGNED_OUT })
@@ -681,6 +686,46 @@ test.describe('pre-issued tags', () => {
     // Listed as waiting, with the address masked.
     await expect(page.getByText('Waiting').first()).toBeVisible()
     await expect(page.getByText(buyer)).toHaveCount(0)
+  })
+
+  /**
+   * The invitation the buyer is sent, as they meet it.
+   *
+   * It stops short of submitting: registration is capped at five an hour, and
+   * the identity the server actually creates an account under is covered
+   * directly in `api/tests/test_tags_and_scan.py`. What can only be checked
+   * here is that the page fills both fields in and refuses to let them be
+   * edited — the tag is printed, so neither is still an open question.
+   */
+  test('an invited buyer meets a form with their name and address fixed', async ({
+    page,
+    browser,
+  }) => {
+    const buyer = `invited-${Date.now()}@example.com`
+
+    await page.goto(`${APP}/app/issue`)
+    await page.getByLabel(/email address/i).fill(buyer)
+    await page.getByLabel(/Buyer’s name/).fill('Ada Lovelace')
+    await page.getByRole('button', { name: /Issue and invite/ }).click()
+    await expect(page.getByText(/An invitation is on its way/)).toBeVisible()
+
+    // DLT_MAIL_PROVIDER=console prints the invitation rather than sending it.
+    const log = process.env.DLT_API_LOG
+    expect(log, 'set DLT_API_LOG to the API log the console mailer writes to').toBeTruthy()
+    const { readFile } = await import('node:fs/promises')
+    const invite = [...(await readFile(log!, 'utf8')).matchAll(/invite=([A-Za-z0-9_-]+)/g)].at(-1)
+    expect(invite, 'no invitation link in the API output').toBeTruthy()
+
+    const outside = await browser.newContext({ storageState: SIGNED_OUT })
+    const invited = await outside.newPage()
+    await invited.goto(`${APP}/register?invite=${invite![1]}`)
+
+    await expect(invited.getByRole('heading', { name: 'Set up your tag.' })).toBeVisible()
+    await expect(invited.locator('#email')).toHaveValue(buyer)
+    await expect(invited.locator('#email')).toBeDisabled()
+    await expect(invited.locator('#name')).toHaveValue('Ada Lovelace')
+    await expect(invited.locator('#name')).toBeDisabled()
+    await outside.close()
   })
 
   test('an ordinary account has no way in', async ({ page }) => {
@@ -713,13 +758,60 @@ test.describe('the mole', () => {
     await mole.click() // first tip
     await expect(page.locator('.mole-bubble')).toBeVisible()
 
-    await page.getByRole('button', { name: /Don’t show me again/ }).click()
+    // One small cross sends it away, and it says on the way out where the
+    // switch that brings it back is.
+    await page.getByRole('button', { name: 'Hide the mole' }).click()
     await expect(page.locator('.mole-companion')).toHaveCount(0)
+    const farewell = page.getByRole('dialog')
+    await expect(farewell).toBeVisible()
+    await expect(farewell.getByText(/Show the mole/)).toBeVisible()
+    await farewell.getByRole('button', { name: 'Got it' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
 
     // And it stays gone.
     await page.reload()
     await page.waitForTimeout(2500)
     await expect(page.locator('.mole-companion')).toHaveCount(0)
+  })
+
+  /**
+   * A fixed corner is the one place a companion cannot be moved out of, so
+   * this checks the two halves of that: it can be picked up and put down
+   * somewhere else, and it is still there after a reload.
+   */
+  test('can be picked up and put down somewhere else, and stays there', async ({ page }) => {
+    await page.goto(APP)
+    const mole = page.locator('.mole-companion__button')
+    await expect(mole).toBeVisible()
+
+    const before = (await mole.boundingBox())!
+    await page.mouse.move(before.x + before.width / 2, before.y + 20)
+    await page.mouse.down()
+    // In steps: one jump would not pass the threshold that starts a drag.
+    await page.mouse.move(before.x - 200, before.y - 120, { steps: 12 })
+    await page.mouse.up()
+
+    const after = (await mole.boundingBox())!
+    expect(after.x).toBeLessThan(before.x - 120)
+    expect(after.y).toBeLessThan(before.y - 60)
+
+    // Dropping it is not also asking it a question.
+    await expect(page.locator('.mole-bubble')).toHaveCount(0)
+
+    // The spot is written when the drag ends, which is a frame after the
+    // button comes up — so wait for it rather than for the reload to race it.
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem('dlt.mole.spot')))
+      .not.toBeNull()
+
+    await page.reload()
+    await expect(mole).toBeVisible()
+    const restored = (await mole.boundingBox())!
+    expect(Math.abs(restored.x - after.x)).toBeLessThan(6)
+
+    // Settings puts it back, which is also how this test cleans up after
+    // itself for the ones that follow.
+    await page.evaluate(() => window.localStorage.removeItem('dlt.mole.spot'))
   })
 
   test('and can be brought back from settings', async ({ browser }) => {
@@ -730,8 +822,9 @@ test.describe('the mole', () => {
     await page.goto(`${APP}/app`)
     await expect(page.locator('.mole-companion__button')).toBeVisible()
     await page.getByText(/I look after|Your bags/).first().waitFor({ timeout: 8000 })
-    await page.getByRole('button', { name: /Don’t show me again/ }).click()
+    await page.getByRole('button', { name: 'Hide the mole' }).click()
     await expect(page.locator('.mole-companion')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Got it' }).click()
 
     await page.goto(`${APP}/app/settings`)
     const showMole = page.getByLabel(/Show the mole/)
@@ -825,7 +918,7 @@ test.describe('the authentication code', () => {
     await disableTwoFactor(page)
   })
 
-  test('sends the cases on a journey, and shows who collects them', async ({ page, request }) => {
+  test('packs the cases into one, and tags it when the code is right', async ({ page, request }) => {
     const secret = await enableTwoFactor(page, request)
     const { email } = await owner()
 
@@ -837,14 +930,20 @@ test.describe('the authentication code', () => {
     await fresh.click('button[type="submit"]')
     await fresh.getByText('Enter the six-digit code').waitFor()
 
-    // A wrong code: somebody else walks off with the bags.
+    // The password step hands over: only the code is on screen now, with a
+    // way back to the fields it replaced.
+    await expect(fresh.locator('#password')).toHaveCount(0)
+    await expect(fresh.getByRole('button', { name: /Back/ })).toBeVisible()
+
+    // A wrong code: the case is refused, and the six come back apart.
     await fresh.locator('.case input').first().fill('000000')
     await expect(fresh.getByText('That code is not valid.')).toBeVisible({ timeout: 10_000 })
-    await expect(fresh.locator('.journey')).toBeVisible()
     await expect(fresh.locator('.code-input--error')).toBeVisible()
+    await expect(fresh.locator('.case input')).toHaveCount(6)
 
-    // The right one: they come home.
+    // The right one: it checks in, gets its tag, and the page moves on.
     await fresh.locator('.case input').first().fill(totp(secret))
+    await expect(fresh.locator('.checkin__art')).toBeVisible({ timeout: 10_000 })
     await fresh.waitForURL('**/app', { timeout: 15_000 })
     await context.close()
     await disableTwoFactor(page)

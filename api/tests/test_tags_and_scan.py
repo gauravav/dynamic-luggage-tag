@@ -6,6 +6,8 @@ leak nothing; a tag marked lost must leak only what the owner opted into.
 
 from __future__ import annotations
 
+import re
+
 from conftest import auth_headers, register_and_sign_in
 
 PASSWORD = "correct horse battery staple"
@@ -1094,15 +1096,23 @@ class TestPreIssuedTags:
     def _issue(self, client, csrf, email=BUYER, **extra):
         response = client.post(
             "/api/v1/admin/claims",
-            json={"email": email, "label": "Ordered tag", **extra},
+            json={"email": email, "name": "Ada Lovelace", "label": "Ordered tag", **extra},
             headers=auth_headers(csrf),
         )
         assert response.status_code == 201, response.get_json()
         return response.get_json()["claim"]
 
+    @staticmethod
+    def _invite_token(outbox):
+        """The link out of the most recent invitation."""
+        body = next(mail["body"] for mail in reversed(outbox) if "on its way" in mail["subject"])
+        found = re.search(r"invite=([A-Za-z0-9_\-]+)", body)
+        assert found, f"no invitation link in:\n{body}"
+        return found.group(1)
+
     def test_a_pre_issued_tag_lands_in_the_account_that_registers(self, client, app, outbox):
         admin, admin_csrf = self._admin(app, outbox)
-        claim = self._issue(admin, admin_csrf, icon="roller", icon_color="indigo")
+        claim = self._issue(admin, admin_csrf)
         token = _token_from_url(claim["scan_url"])
 
         # Scanned before anyone has signed up: honest, and useful.
@@ -1117,7 +1127,6 @@ class TestPreIssuedTags:
         tags = buyer.get("/api/v1/tags").get_json()["tags"]
         assert len(tags) == 1
         assert tags[0]["label"] == "Ordered tag"
-        assert tags[0]["icon"] == "roller"
 
         # And the code printed on the physical tag is the one that now works.
         assert app.test_client().get(f"/api/v1/scan/{token}").status_code == 200
@@ -1150,8 +1159,18 @@ class TestPreIssuedTags:
         buyer_csrf, _ = register_and_sign_in(buyer, outbox, email=self.BUYER)
         theirs = _make_tag(buyer, buyer_csrf, "Existing")
 
+        before = len(outbox)
         claim = self._issue(admin, admin_csrf)
         assert claim["design"] == theirs["design"]
+
+        # Nobody with an account is told to go and create one.
+        assert claim["invite_sent_at"] is None
+        assert len(outbox) == before
+        refused = admin.post(
+            f"/api/v1/admin/claims/{claim['id']}/invite", headers=auth_headers(admin_csrf)
+        )
+        assert refused.status_code == 409
+        assert refused.get_json()["error"]["code"] == "account_exists"
 
         # And it appears the next time they look at their tags.
         labels = {tag["label"] for tag in buyer.get("/api/v1/tags").get_json()["tags"]}
@@ -1192,6 +1211,118 @@ class TestPreIssuedTags:
         response = admin.get(f"/api/v1/admin/claims/{claim['id']}/print.pdf")
         assert response.status_code == 200
         assert response.data.startswith(b"%PDF")
+
+    def test_issuing_a_code_invites_the_buyer(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        self._issue(admin, admin_csrf)
+
+        invitation = outbox[-1]
+        assert invitation["to"] == self.BUYER
+        assert "on its way" in invitation["subject"]
+        assert "/register?invite=" in invitation["body"]
+
+    def test_an_invitation_fills_in_the_address_and_the_name(self, client, app, outbox):
+        """The tag is printed. Who it belongs to is no longer an open question."""
+        admin, admin_csrf = self._admin(app, outbox)
+        self._issue(admin, admin_csrf)
+        invite = self._invite_token(outbox)
+
+        looked_up = app.test_client().get(f"/api/v1/auth/invite/{invite}")
+        assert looked_up.status_code == 200
+        assert looked_up.get_json()["invitation"] == {
+            "email": self.BUYER,
+            "name": "Ada Lovelace",
+        }
+
+    def test_an_invited_account_is_created_under_the_invited_identity(self, client, app, outbox):
+        """The form is not trusted: both fields come off the claim."""
+        admin, admin_csrf = self._admin(app, outbox)
+        self._issue(admin, admin_csrf)
+        invite = self._invite_token(outbox)
+
+        buyer = app.test_client()
+        created = buyer.post(
+            "/api/v1/auth/register",
+            json={
+                # What a tampered page might send instead.
+                "email": "somebody-else@example.com",
+                "name": "Somebody Else",
+                "password": "a properly long passphrase here",
+                "invite_token": invite,
+            },
+        )
+        assert created.status_code == 202
+
+        verify = next(mail for mail in reversed(outbox) if "Confirm" in mail["subject"])
+        assert verify["to"] == self.BUYER
+
+        token = re.search(r"token=([A-Za-z0-9_\-]+)", verify["body"]).group(1)
+        assert buyer.post("/api/v1/auth/verify-email", json={"token": token}).status_code == 200
+        buyer.post(
+            "/api/v1/auth/login",
+            json={"email": self.BUYER, "password": "a properly long passphrase here"},
+        )
+        account = buyer.get("/api/v1/auth/session").get_json()["user"]
+        assert account["email"] == self.BUYER
+        assert account["name"] == "Ada Lovelace"
+        assert len(buyer.get("/api/v1/tags").get_json()["tags"]) == 1
+
+    def test_an_invitation_stops_working_once_it_is_taken_up(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        self._issue(admin, admin_csrf)
+        invite = self._invite_token(outbox)
+        register_and_sign_in(app.test_client(), outbox, email=self.BUYER)
+
+        assert app.test_client().get(f"/api/v1/auth/invite/{invite}").status_code == 404
+        spent = app.test_client().post(
+            "/api/v1/auth/register",
+            json={
+                "email": "another@example.com",
+                "password": "a properly long passphrase here",
+                "invite_token": invite,
+            },
+        )
+        assert spent.status_code == 400
+        assert spent.get_json()["error"]["code"] == "invalid_invite"
+
+    def test_the_invitation_can_be_sent_again_on_a_new_link(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+        first = self._invite_token(outbox)
+
+        again = admin.post(
+            f"/api/v1/admin/claims/{claim['id']}/invite", headers=auth_headers(admin_csrf)
+        )
+        assert again.status_code == 200
+        second = self._invite_token(outbox)
+
+        assert second != first
+        # Only the newest link resolves: the old one is not a second way in.
+        assert app.test_client().get(f"/api/v1/auth/invite/{first}").status_code == 404
+        assert app.test_client().get(f"/api/v1/auth/invite/{second}").status_code == 200
+
+    def test_the_printed_tag_carries_the_name_it_was_ordered_for(self, client, app, outbox):
+        admin, admin_csrf = self._admin(app, outbox)
+        claim = self._issue(admin, admin_csrf)
+
+        plain = admin.get(f"/api/v1/admin/claims/{claim['id']}/print.pdf")
+        trimmed = admin.get(f"/api/v1/admin/claims/{claim['id']}/print.pdf?guides=1")
+        assert plain.status_code == 200 and trimmed.status_code == 200
+        assert plain.data.startswith(b"%PDF") and trimmed.data.startswith(b"%PDF")
+        # The guided proof is a different file: it has the trim rectangles on it.
+        assert plain.data != trimmed.data
+        assert "-trim.pdf" in trimmed.headers["Content-Disposition"]
+
+    def test_the_buyer_cannot_be_asked_for_an_icon(self, client, app, outbox):
+        """The icon is the owner's to choose, once they have an account."""
+        admin, admin_csrf = self._admin(app, outbox)
+        response = admin.post(
+            "/api/v1/admin/claims",
+            json={"email": self.BUYER, "name": "Ada Lovelace", "icon": "roller"},
+            headers=auth_headers(admin_csrf),
+        )
+        assert response.status_code == 400
+        assert "icon" in response.get_json()["error"]["fields"]
 
     def test_an_unclaimed_code_can_be_withdrawn(self, client, app, outbox):
         admin, admin_csrf = self._admin(app, outbox)
@@ -1266,7 +1397,7 @@ class TestAdminBoundary:
 
         operator.post(
             "/api/v1/admin/claims",
-            json={"email": "victim@example.com"},
+            json={"email": "victim@example.com", "name": "The Victim"},
             headers=auth_headers(admin_csrf),
         )
 

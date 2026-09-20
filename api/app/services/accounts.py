@@ -58,8 +58,10 @@ def create_user(
 
     # A tag may already have been printed and shipped to this address. If so it
     # has fixed artwork, and the account adopts its seed rather than generating
-    # one the printed tag would not match.
+    # one the printed tag would not match. The name on it was settled at the
+    # same moment and for the same reason, so the account takes that too.
     waiting = claims.pending_for(db, email, config=config)
+    printed_name = claims.name_for_new_user(waiting, keyring=keyring)
 
     user = User(
         id=user_id,
@@ -75,7 +77,7 @@ def create_user(
     )
     # The address is stored as the user typed it; only the index is normalized.
     user_crypto.write_user(user, "email", email.strip())
-    user_crypto.write_user(user, "name", name)
+    user_crypto.write_user(user, "name", name or printed_name)
     db.add(user)
     db.flush()
 

@@ -61,6 +61,7 @@ from ..security.passwords import (
     verify_password,
 )
 from ..services import accounts, notifications
+from ..services import claims as claim_service
 from ..services.mailer import mask_email
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -109,18 +110,26 @@ def register():
     config = app_config()
     db = db_session()
 
+    # An invited buyer has a tag already printed and posted. The address and
+    # the name on it were settled when it went to the press, so they are read
+    # off the claim rather than taken from the form: whatever the page sent is
+    # ignored, and a link cannot be turned into an account in another name.
+    email, name = payload.email, payload.name
+    if payload.invite_token:
+        email, name = _invited_identity(db, payload.invite_token, config=config)
+
     try:
         check_password_policy(
             payload.password,
             min_length=config.password_min_length,
-            context=(payload.email, payload.name or ""),
+            context=(email, name or ""),
         )
     except PasswordPolicyError as exc:
         raise ApiError(
             "weak_password", "Choose a stronger password.", fields={"password": str(exc)}
         ) from exc
 
-    existing = accounts.find_by_email(db, payload.email, config=config)
+    existing = accounts.find_by_email(db, email, config=config)
     if existing is not None:
         # The response never says the address is known. What differs is the
         # email, which only reaches the person entitled to know.
@@ -160,9 +169,9 @@ def register():
 
     user, crypto = accounts.create_user(
         db,
-        email=payload.email,
+        email=email,
         password=payload.password,
-        name=payload.name,
+        name=name,
         config=config,
         keyring=keyring(),
         hasher=_hasher(),
@@ -180,8 +189,51 @@ def register():
     )
     db.commit()
 
-    notifications.deliver(_mailer(), payload.email, notifications.verification_email(config, token))
+    notifications.deliver(_mailer(), email, notifications.verification_email(config, token))
     return jsonify(_REGISTER_ACCEPTED), 202
+
+
+def _invited_identity(db, invite: str, *, config) -> tuple[str, str | None]:
+    """The address and name an invitation was issued to.
+
+    A spent or withdrawn invitation is not a soft failure here. Falling back to
+    what the form sent would quietly create an account under an address the
+    invitation does not cover, which is the one thing this is meant to prevent.
+    """
+    claim = claim_service.find_by_invite(db, invite, config=config)
+    address = claim_service.read(claim, "email", keyring=keyring()) if claim else None
+    if claim is None or not address:
+        raise ApiError(
+            "invalid_invite",
+            "That invitation link is no longer valid. If you have already created "
+            "your account, sign in instead.",
+            status=400,
+        )
+    return address, claim_service.read(claim, "name", keyring=keyring())
+
+
+@bp.get("/invite/<invite>")
+@limiter.limit("30 per hour")
+def invitation(invite: str):
+    """What the registration page should fill in for an invited buyer.
+
+    The link was mailed to this address, so returning it to whoever holds the
+    link tells them nothing they were not already told. Nothing else about the
+    claim is exposed: not the scan code, not the design, not who issued it.
+    """
+    config = app_config()
+    claim = claim_service.find_by_invite(db_session(), invite, config=config)
+    address = claim_service.read(claim, "email", keyring=keyring()) if claim else None
+    if claim is None or not address:
+        raise ApiError("invalid_invite", "That invitation link is no longer valid.", status=404)
+    return jsonify(
+        {
+            "invitation": {
+                "email": address,
+                "name": claim_service.read(claim, "name", keyring=keyring()),
+            }
+        }
+    )
 
 
 @bp.post("/verify-email")

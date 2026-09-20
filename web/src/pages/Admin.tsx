@@ -16,7 +16,6 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, downloadAsset, type DesignSpec } from '../api/client'
-import { IconPicker } from '../components/IconPicker'
 import { PageLoader } from '../components/PageLoader'
 import { TagArt } from '../components/TagArt'
 import { BusyLabel, Stagger, StaggerItem } from '../components/motion'
@@ -29,6 +28,7 @@ interface Claim {
   icon: string | null
   icon_color: string | null
   created_at: string
+  invite_sent_at: string | null
   claimed: boolean
   claimed_at: string | null
   design: DesignSpec
@@ -47,13 +47,15 @@ export function Admin() {
   const [error, setError] = useState<string | null>(null)
   // The label rides along: the server seals it and never returns it, and the
   // form that held it is cleared the moment the code is issued.
-  const [issued, setIssued] = useState<(Claim & { label: string | null }) | null>(null)
+  const [issued, setIssued] = useState<
+    (Claim & { label: string | null; name: string }) | null
+  >(null)
   const [busy, setBusy] = useState(false)
 
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
   const [label, setLabel] = useState('')
-  const [icon, setIcon] = useState<string | null>(null)
-  const [iconColor, setIconColor] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -80,14 +82,21 @@ export function Admin() {
     try {
       const body = await api.post<{ claim: Claim }>('/admin/claims', {
         email: email.trim(),
+        name: name.trim(),
         label: label.trim() || null,
-        icon,
-        icon_color: iconColor,
       })
       // Held on screen rather than in the list: the scan URL comes back once,
       // and this is the only moment the operator can print from it.
-      setIssued({ ...body.claim, label: label.trim() || null })
+      setIssued({ ...body.claim, label: label.trim() || null, name: name.trim() })
+      // Not "on its way to <address>": this page masks addresses, and a
+      // confirmation is no reason to put one back on screen.
+      setSent(
+        body.claim.invite_sent_at
+          ? 'An invitation is on its way to that address.'
+          : 'That address already has an account, so no invitation was sent — the tag appears the next time they open their tags.',
+      )
       setEmail('')
+      setName('')
       setLabel('')
       await load()
     } catch (cause) {
@@ -109,12 +118,34 @@ export function Admin() {
     }
   }
 
-  async function print(claim: Claim) {
+  /**
+   * The printable tag, in one of its two forms.
+   *
+   * `trim` overlays the trim and safety rectangles. It is for checking what
+   * the cut will take off before an order goes out — never the file that goes
+   * to the press, which is why it downloads under its own name.
+   */
+  async function print(claim: Claim, trim = false) {
     setError(null)
     try {
-      await downloadAsset(`/admin/claims/${claim.id}/print.pdf`, `tag-${claim.id}.pdf`)
+      await downloadAsset(
+        `/admin/claims/${claim.id}/print.pdf${trim ? '?guides=1' : ''}`,
+        `tag-${claim.id}${trim ? '-trim' : ''}.pdf`,
+      )
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Could not prepare that file.')
+    }
+  }
+
+  async function invite(claim: Claim) {
+    setError(null)
+    setSent(null)
+    try {
+      await api.post(`/admin/claims/${claim.id}/invite`, {})
+      setSent('The invitation has been sent again, on a new link. The old one no longer works.')
+      await load()
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Could not send that invitation.')
     }
   }
 
@@ -136,10 +167,19 @@ export function Admin() {
 
       <AnimatePresence>{error && <Notice key={error}>{error}</Notice>}</AnimatePresence>
 
+      <AnimatePresence>
+        {sent && (
+          <Notice key={sent} kind="info">
+            {sent}
+          </Notice>
+        )}
+      </AnimatePresence>
+
       <p className="muted" style={{ maxWidth: '62ch' }}>
-        Create a code addressed to a buyer, print it, and post it. When that address registers, the
-        tag is already in their account with this artwork on it. If they already have an account,
-        it appears the next time they open their tags.
+        Create a code addressed to a buyer, print it, and post it. They are invited by email to
+        create the account it belongs to, with their address and the name on the tag already
+        filled in. If they already have an account, the tag appears the next time they open their
+        tags.
       </p>
 
       <div className="grid grid--split" style={{ alignItems: 'start', marginTop: 24 }}>
@@ -153,7 +193,16 @@ export function Admin() {
               value={email}
               onChange={setEmail}
               required
-              hint="The address they will sign up with. Stored encrypted, and shown masked here afterwards."
+              hint="The invitation goes here, and it is the address they sign up with. Stored encrypted, and shown masked here afterwards."
+            />
+            <Field
+              label="Buyer’s name"
+              name="claim_name"
+              value={name}
+              onChange={setName}
+              maxLength={120}
+              required
+              hint="Printed on the tag, so it is settled here rather than by them. Their account starts out under this name."
             />
             <Field
               label="Label (optional)"
@@ -163,23 +212,16 @@ export function Admin() {
               maxLength={80}
               hint="Printed small on the tag. The owner can change it later."
             />
-            <IconPicker
-              icon={icon}
-              color={iconColor}
-              paper="#EDF1EC"
-              disabled={busy}
-              onChange={(next) => {
-                setIcon(next.icon)
-                setIconColor(next.color)
-              }}
-            />
+            {/* No bag icon here. It is the owner's to choose once they have an
+                account, and a guess made for them would be on a printed tag
+                they cannot change. */}
             <button
               type="submit"
               className="btn btn--primary"
               style={{ marginTop: 16 }}
-              disabled={busy || !email.trim()}
+              disabled={busy || !email.trim() || !name.trim()}
             >
-              <BusyLabel busy={busy} idle="Issue and print" working="Issuing…" />
+              <BusyLabel busy={busy} idle="Issue and invite" working="Issuing…" />
             </button>
           </form>
         </section>
@@ -202,6 +244,7 @@ export function Admin() {
               <div style={{ maxWidth: 180, margin: '0 auto 16px' }}>
                 <TagArt
                   design={issued.design}
+                  name={issued.name}
                   subtitle={issued.label}
                   icon={issued.icon}
                   iconColor={issued.icon_color}
@@ -218,6 +261,18 @@ export function Admin() {
               >
                 Download print PDF
               </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--block"
+                style={{ marginTop: 8 }}
+                onClick={() => print(issued, true)}
+              >
+                Download with trim marks
+              </button>
+              <p className="faint" style={{ marginTop: 8, marginBottom: 0 }}>
+                The trim version draws the cut line and the safe area over the artwork, for
+                checking before an order. Send the plain one to the press.
+              </p>
             </motion.section>
           ) : (
             <motion.section
@@ -258,7 +313,11 @@ export function Admin() {
                   </p>
                   <p className="faint" style={{ margin: 0 }}>
                     Issued {formatDateTime(claim.created_at)}
-                    {claim.claimed_at ? ` · claimed ${formatDateTime(claim.claimed_at)}` : ''}
+                    {claim.claimed_at
+                      ? ` · claimed ${formatDateTime(claim.claimed_at)}`
+                      : claim.invite_sent_at
+                        ? ` · invited ${formatDateTime(claim.invite_sent_at)}`
+                        : ''}
                   </p>
                 </div>
                 <div className="row">
@@ -273,8 +332,27 @@ export function Admin() {
                         className="btn btn--ghost btn--sm"
                         onClick={() => print(claim)}
                       >
-                        Print
+                        Print PDF
                       </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => print(claim, true)}
+                      >
+                        With trim
+                      </button>
+                      {/* Nothing to re-invite someone to when the address
+                          already had an account: that code was issued without
+                          an invitation, and the server refuses to mint one. */}
+                      {claim.invite_sent_at && (
+                        <button
+                          type="button"
+                          className="btn btn--quiet btn--sm"
+                          onClick={() => invite(claim)}
+                        >
+                          Invite again
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn btn--quiet btn--sm"
