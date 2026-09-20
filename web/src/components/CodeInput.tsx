@@ -2,8 +2,8 @@
  * A six-digit authentication code, as six little suitcases.
  *
  * One box per digit rather than one field for all six, because that is how
- * the code is read off a phone — in digits, not as a number — and because it
- * gives the journey animation next door something to load onto a plane.
+ * the code is read off a phone — in digits, not as a number — and because six
+ * cases are what the check-in animation packs into one.
  *
  * The fiddly parts of a segmented input, all handled: typing moves forward,
  * backspace on an empty box moves back and clears the one before it, arrow
@@ -16,7 +16,7 @@
  */
 
 import { motion } from 'motion/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const LENGTH = 6
 
@@ -29,6 +29,8 @@ interface Props {
   disabled?: boolean
   autoFocus?: boolean
   error?: boolean
+  /** Closes the six cases into a single pile at the centre. */
+  merging?: boolean
 }
 
 export function CodeInput({
@@ -39,9 +41,33 @@ export function CodeInput({
   disabled,
   autoFocus,
   error,
+  merging,
 }: Props) {
   const boxes = useRef<(HTMLInputElement | null)[]>([])
+  const cases = useRef<(HTMLLabelElement | null)[]>([])
+  const row = useRef<HTMLDivElement | null>(null)
   const digits = value.padEnd(LENGTH).slice(0, LENGTH).split('')
+
+  // How far each case has to travel to reach the middle. Measured rather than
+  // worked out from the CSS: the box and the gap both change with the
+  // viewport, and a number guessed here would leave cases short of the pile.
+  const [pull, setPull] = useState<number[] | null>(null)
+  useLayoutEffect(() => {
+    if (!merging) {
+      setPull(null)
+      return
+    }
+    const bounds = row.current?.getBoundingClientRect()
+    if (!bounds) return
+    const middle = bounds.left + bounds.width / 2
+    setPull(
+      cases.current.map((node) => {
+        if (!node) return 0
+        const box = node.getBoundingClientRect()
+        return middle - (box.left + box.width / 2)
+      }),
+    )
+  }, [merging])
 
   useEffect(() => {
     if (autoFocus) boxes.current[0]?.focus()
@@ -85,6 +111,7 @@ export function CodeInput({
 
   return (
     <div
+      ref={row}
       className={`code-input${error ? ' code-input--error' : ''}`}
       role="group"
       aria-label={label}
@@ -92,10 +119,24 @@ export function CodeInput({
       {digits.map((digit, index) => (
         <motion.label
           key={index}
+          ref={(node) => {
+            cases.current[index] = node
+          }}
           className={`case${digit.trim() ? ' case--packed' : ''}`}
-          // Each one settles as its digit lands, like a case being set down.
-          animate={digit.trim() ? { y: [-6, 0], rotate: [-3, 0] } : { y: 0, rotate: 0 }}
-          transition={{ type: 'spring', stiffness: 520, damping: 18 }}
+          // Each one settles as its digit lands, like a case being set down —
+          // until the code goes off, and they all close into one pile.
+          animate={
+            merging && pull
+              ? { x: pull[index] ?? 0, y: 0, rotate: 0, scale: 0.34, opacity: 0 }
+              : digit.trim()
+                ? { x: 0, y: [-6, 0], rotate: [-3, 0], scale: 1, opacity: 1 }
+                : { x: 0, y: 0, rotate: 0, scale: 1, opacity: 1 }
+          }
+          transition={
+            merging
+              ? { duration: 0.4, ease: [0.4, 0, 0.2, 1] }
+              : { type: 'spring', stiffness: 520, damping: 18 }
+          }
         >
           <span className="case__handle" aria-hidden="true" />
           <span className="case__body" aria-hidden="true">

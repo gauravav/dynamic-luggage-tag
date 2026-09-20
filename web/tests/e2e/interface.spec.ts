@@ -825,7 +825,7 @@ test.describe('the authentication code', () => {
     await disableTwoFactor(page)
   })
 
-  test('sends the cases on a journey, and shows who collects them', async ({ page, request }) => {
+  test('packs the cases into one, and tags it when the code is right', async ({ page, request }) => {
     const secret = await enableTwoFactor(page, request)
     const { email } = await owner()
 
@@ -837,14 +837,20 @@ test.describe('the authentication code', () => {
     await fresh.click('button[type="submit"]')
     await fresh.getByText('Enter the six-digit code').waitFor()
 
-    // A wrong code: somebody else walks off with the bags.
+    // The password step hands over: only the code is on screen now, with a
+    // way back to the fields it replaced.
+    await expect(fresh.locator('#password')).toHaveCount(0)
+    await expect(fresh.getByRole('button', { name: /Back/ })).toBeVisible()
+
+    // A wrong code: the case is refused, and the six come back apart.
     await fresh.locator('.case input').first().fill('000000')
     await expect(fresh.getByText('That code is not valid.')).toBeVisible({ timeout: 10_000 })
-    await expect(fresh.locator('.journey')).toBeVisible()
     await expect(fresh.locator('.code-input--error')).toBeVisible()
+    await expect(fresh.locator('.case input')).toHaveCount(6)
 
-    // The right one: they come home.
+    // The right one: it checks in, gets its tag, and the page moves on.
     await fresh.locator('.case input').first().fill(totp(secret))
+    await expect(fresh.locator('.checkin__art')).toBeVisible({ timeout: 10_000 })
     await fresh.waitForURL('**/app', { timeout: 15_000 })
     await context.close()
     await disableTwoFactor(page)
