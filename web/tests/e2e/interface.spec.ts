@@ -758,13 +758,60 @@ test.describe('the mole', () => {
     await mole.click() // first tip
     await expect(page.locator('.mole-bubble')).toBeVisible()
 
-    await page.getByRole('button', { name: /Don’t show me again/ }).click()
+    // One small cross sends it away, and it says on the way out where the
+    // switch that brings it back is.
+    await page.getByRole('button', { name: 'Hide the mole' }).click()
     await expect(page.locator('.mole-companion')).toHaveCount(0)
+    const farewell = page.getByRole('dialog')
+    await expect(farewell).toBeVisible()
+    await expect(farewell.getByText(/Show the mole/)).toBeVisible()
+    await farewell.getByRole('button', { name: 'Got it' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
 
     // And it stays gone.
     await page.reload()
     await page.waitForTimeout(2500)
     await expect(page.locator('.mole-companion')).toHaveCount(0)
+  })
+
+  /**
+   * A fixed corner is the one place a companion cannot be moved out of, so
+   * this checks the two halves of that: it can be picked up and put down
+   * somewhere else, and it is still there after a reload.
+   */
+  test('can be picked up and put down somewhere else, and stays there', async ({ page }) => {
+    await page.goto(APP)
+    const mole = page.locator('.mole-companion__button')
+    await expect(mole).toBeVisible()
+
+    const before = (await mole.boundingBox())!
+    await page.mouse.move(before.x + before.width / 2, before.y + 20)
+    await page.mouse.down()
+    // In steps: one jump would not pass the threshold that starts a drag.
+    await page.mouse.move(before.x - 200, before.y - 120, { steps: 12 })
+    await page.mouse.up()
+
+    const after = (await mole.boundingBox())!
+    expect(after.x).toBeLessThan(before.x - 120)
+    expect(after.y).toBeLessThan(before.y - 60)
+
+    // Dropping it is not also asking it a question.
+    await expect(page.locator('.mole-bubble')).toHaveCount(0)
+
+    // The spot is written when the drag ends, which is a frame after the
+    // button comes up — so wait for it rather than for the reload to race it.
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem('dlt.mole.spot')))
+      .not.toBeNull()
+
+    await page.reload()
+    await expect(mole).toBeVisible()
+    const restored = (await mole.boundingBox())!
+    expect(Math.abs(restored.x - after.x)).toBeLessThan(6)
+
+    // Settings puts it back, which is also how this test cleans up after
+    // itself for the ones that follow.
+    await page.evaluate(() => window.localStorage.removeItem('dlt.mole.spot'))
   })
 
   test('and can be brought back from settings', async ({ browser }) => {
@@ -775,8 +822,9 @@ test.describe('the mole', () => {
     await page.goto(`${APP}/app`)
     await expect(page.locator('.mole-companion__button')).toBeVisible()
     await page.getByText(/I look after|Your bags/).first().waitFor({ timeout: 8000 })
-    await page.getByRole('button', { name: /Don’t show me again/ }).click()
+    await page.getByRole('button', { name: 'Hide the mole' }).click()
     await expect(page.locator('.mole-companion')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Got it' }).click()
 
     await page.goto(`${APP}/app/settings`)
     const showMole = page.getByLabel(/Show the mole/)
