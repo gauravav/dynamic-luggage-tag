@@ -755,16 +755,17 @@ if tag.name_disclosure == NAME_ALWAYS and not retired:</code></pre>
 
   <h3>What it can reach, and what it cannot</h3>
   <p>
-    The surface is four routes about codes. There is no user list, no tag list,
+    The surface is five routes about codes. There is no user list, no tag list,
     no scan history and no inbox — issuing a tag to an address is not a route
     into that account, and there are tests asserting exactly that.
   </p>
   <p>
     A pre-issued claim carries <strong>its own data key</strong>, wrapped by the
-    same keyring that wraps a user's, so the buyer's address and the scan token
-    are encrypted from the moment they are typed. When the address registers,
-    the claim is converted into a tag sealed under the new owner's key and the
-    claim's own copy is destroyed in the same transaction:
+    same keyring that wraps a user's, so the buyer's address, the name that
+    goes on the printed tag and the scan token are encrypted from the moment
+    they are typed. When the address registers, the claim is converted into a
+    tag sealed under the new owner's key and the claim's own copy is destroyed
+    in the same transaction:
   </p>
   <span class="src">api/app/services/claims.py</span>
 <pre><code><span class="c"># Nothing readable is left on the claim. The row stays as a record that</span>
@@ -773,6 +774,10 @@ if tag.name_disclosure == NAME_ALWAYS and not retired:</code></pre>
 claim.email_enc = b""
 claim.token_enc = b""
 claim.label_enc = None
+claim.name_enc = None
+<span class="c"># The invitation has been taken up. Anyone still holding the link — it was</span>
+<span class="c"># mail, and mail gets forwarded — is holding one that no longer resolves.</span>
+claim.invite_token_hash = None
 claim.dek_wrapped = b"\x00" * 32</code></pre>
   <p>
     After that the operator can see that a code was issued and that it was
@@ -787,6 +792,17 @@ claim.dek_wrapped = b"\x00" * 32</code></pre>
       operator can print from it; afterwards only the owner can.
     </figcaption>
   </figure>
+
+  <h3>The invitation, and what it settles</h3>
+  <p>
+    Issuing a code emails the buyer an invitation. Only its hash is stored, it
+    is matched on that hash, and re-sending mints a new one so there is never
+    more than one live link into a given code. Registration reads the address
+    and the name <em>off the claim</em> rather than from the form and ignores
+    what the page sent, so a forwarded link cannot be turned into an account in
+    another name — the tag has already been printed for a named person at a
+    named address, and the account has to be that person.
+  </p>
 
   <h3>One design per traveller, decided early</h3>
   <p>

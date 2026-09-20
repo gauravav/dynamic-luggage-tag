@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from sqlalchemy import select
 
 from ..core import design as design_module
@@ -32,12 +32,17 @@ from ..models import TagClaim, utcnow
 from ..schemas import TagClaimIn, parse
 from ..security import audit
 from ..security.authz import admin_required, require_user
+from ..services import accounts, notifications
 from ..services import claims as claim_service
 from ..services.mailer import mask_email
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 MAX_OPEN_CLAIMS = 500
+
+
+def _mailer():
+    return current_app.extensions["mailer"]
 
 
 def _serialize(claim: TagClaim, *, include_token: bool = False, token: str | None = None) -> dict:
@@ -48,6 +53,7 @@ def _serialize(claim: TagClaim, *, include_token: bool = False, token: str | Non
         "icon": claim.icon,
         "icon_color": claim.icon_color,
         "created_at": claim.created_at.isoformat(),
+        "invite_sent_at": claim.invite_sent_at.isoformat() if claim.invite_sent_at else None,
         "claimed": claim.is_claimed,
         "claimed_at": claim.claimed_at.isoformat() if claim.claimed_at else None,
         "design": design_module.generate(bytes(claim.design_seed)).to_dict(),
@@ -95,9 +101,9 @@ def list_claims():
 def create_claim():
     """Issues a code for an address, and returns it once so it can be printed.
 
-    If the address already has an account, no claim is made: a tag is created
-    for them directly, under the design seed their other tags already use,
-    because their artwork is not ours to choose.
+    The buyer is invited by email to create the account it belongs to — unless
+    they already have one, in which case there is nothing to invite them to and
+    the tag simply appears the next time they open their tags.
     """
     payload = parse(request, TagClaimIn)
     admin = require_user()
@@ -116,16 +122,24 @@ def create_claim():
                 status=409,
             )
 
-    claim, token = claim_service.issue(
+    claim, token, invite = claim_service.issue(
         db,
         email=payload.email,
+        name=payload.name,
         label=payload.label,
-        icon=payload.icon,
-        icon_color=payload.icon_color,
         config=config,
         keyring=keyring(),
         issued_by=admin.id,
     )
+
+    # An address that already has an account has nothing to be invited to, and
+    # mailing them a "create your account" link would be a small lie. The tag
+    # reaches them the next time they open their tags, so the invitation is
+    # dropped before it can be sent or looked up.
+    known = accounts.find_by_email(db, payload.email, config=config) is not None
+    if known:
+        claim.invite_token_hash = None
+        claim.invite_sent_at = None
 
     audit.record(
         db,
@@ -134,10 +148,69 @@ def create_claim():
         actor_user_id=admin.id,
         actor_type="admin",
         # No address, not even masked: the audit log is not the place for it.
-        detail={"claim_id": str(claim.id), "icon": bool(payload.icon)},
+        detail={"claim_id": str(claim.id)},
     )
     db.commit()
+
+    # Sent after the commit: a mail provider having a bad minute must not undo
+    # a code that has already been issued. `deliver` never raises, and the
+    # operator can send the invitation again from the list.
+    if not known:
+        notifications.deliver(
+            _mailer(),
+            payload.email,
+            notifications.tag_invitation_email(config, invite, name=payload.name),
+        )
     return jsonify({"claim": _serialize(claim, include_token=True, token=token)}), 201
+
+
+@bp.post("/claims/<claim_id>/invite")
+@admin_required
+@limiter.limit("60 per hour")
+def resend_invitation(claim_id: str):
+    """Sends the invitation again, on a new link.
+
+    Mail goes astray. The previous link stops working as this one is minted,
+    so there is only ever one way into a given code.
+    """
+    claim = _open_claim(claim_id)
+    if claim.is_claimed:
+        raise ApiError(
+            "claim_already_taken",
+            "That code has been claimed. Its owner has an account already.",
+            status=409,
+        )
+
+    config = app_config()
+    db = db_session()
+    address = claim_service.read(claim, "email", keyring=keyring())
+    name = claim_service.read(claim, "name", keyring=keyring())
+    if not address:
+        raise ApiError("not_found", "No such claim.", status=404)
+
+    if accounts.find_by_email(db, address, config=config) is not None:
+        raise ApiError(
+            "account_exists",
+            "That address already has an account. The tag appears in their tags "
+            "without an invitation.",
+            status=409,
+        )
+
+    invite = claim_service.reissue_invite(claim, config=config)
+    audit.record(
+        db,
+        audit.TAG_CLAIM_ISSUED,
+        config=config,
+        actor_user_id=require_user().id,
+        actor_type="admin",
+        detail={"claim_id": str(claim.id), "outcome": "invitation_resent"},
+    )
+    db.commit()
+
+    notifications.deliver(
+        _mailer(), address, notifications.tag_invitation_email(config, invite, name=name)
+    )
+    return jsonify({"claim": _serialize(claim)})
 
 
 @bp.delete("/claims/<claim_id>")
@@ -176,10 +249,13 @@ def withdraw_claim(claim_id: str):
 def claim_pdf(claim_id: str):
     """The printable tag for a pre-issued code.
 
-    No name on it: there is no account yet, and the artwork has to go to the
-    printer before there is. The owner's name is a screen-side disclosure
-    anyway — see the name-disclosure setting — so a pre-printed tag losing it
-    costs nothing.
+    `guides=1` overlays the trim and safety rectangles for proofing on screen:
+    useful for checking what the cut will take off, never the file that goes
+    to the press.
+
+    The name is the one the operator took with the order, which is also the
+    name the account will start out with — the tag and the account have to
+    agree, and the tag is what gets printed first.
     """
     claim = _open_claim(claim_id)
     if claim.is_claimed:
@@ -196,15 +272,17 @@ def claim_pdf(claim_id: str):
     face = print_layout.TagFace(
         design=design_module.generate(bytes(claim.design_seed)),
         scan_url=qr.scan_url(app_config().public_base_url, token),
-        display_name=None,
+        display_name=claim_service.read(claim, "name", keyring=keyring()),
         subtitle=claim_service.read(claim, "label", keyring=keyring()),
         icon=claim.icon,
         icon_color=claim.icon_color,
     )
-    pdf = print_layout.render(face, include_back=True, guides=request.args.get("guides") == "1")
+    guides = request.args.get("guides") == "1"
+    pdf = print_layout.render(face, include_back=True, guides=guides)
 
     response = Response(pdf, mimetype="application/pdf")
-    response.headers["Content-Disposition"] = f'attachment; filename="tag-{claim.id}.pdf"'
+    name = f"tag-{claim.id}{'-trim' if guides else ''}.pdf"
+    response.headers["Content-Disposition"] = f'attachment; filename="{name}"'
     return response
 
 

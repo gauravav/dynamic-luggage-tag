@@ -170,8 +170,19 @@ class TagClaim(Base):
     design_seed: Mapped[bytes] = mapped_column(nullable=False)
 
     label_enc: Mapped[bytes | None] = ciphertext()
+    # The name the operator was given with the order. It is printed on the tag
+    # and becomes the account's name when the invitation is taken up, which is
+    # why the buyer is not asked to type it again — or allowed to.
+    name_enc: Mapped[bytes | None] = ciphertext()
     icon: Mapped[str | None] = mapped_column(String(24))
     icon_color: Mapped[str | None] = mapped_column(String(16))
+
+    # The invitation mailed to the address this was issued to. Only the hash is
+    # kept: the link is sent once, and re-sending mints a new one. It is
+    # cleared when the claim is taken, so a forwarded invitation is not a
+    # second way into an account that now exists.
+    invite_token_hash: Mapped[bytes | None] = digest(unique=True, nullable=True)
+    invite_sent_at: Mapped[dt.datetime | None] = timestamp()
 
     issued_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True

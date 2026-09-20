@@ -78,6 +78,10 @@ class RegisterIn(Payload):
     password: str = Field(min_length=1, max_length=1024)
     name: str | None = Field(default=None, max_length=120)
     accept_terms: bool = Field(default=False)
+    # From the invitation mailed to a buyer whose tag is already printed. When
+    # it is present the address and the name come from the claim it names, not
+    # from the two fields above — see ``api/auth.py``.
+    invite_token: str | None = Field(default=None, max_length=256)
 
     @field_validator("name")
     @classmethod
@@ -227,10 +231,17 @@ class TagUpdateIn(TagAppearance):
         return value
 
 
-class TagClaimIn(TagAppearance):
-    """A code the operator is issuing to an address that may have no account."""
+class TagClaimIn(Payload):
+    """A code the operator is issuing to an address that may have no account.
+
+    No icon: the buyer picks that themselves once they have an account, and a
+    guess made on their behalf would be printed on a tag they cannot change.
+    The name is not a guess — it comes with the order, and it is what the tag
+    is printed with.
+    """
 
     email: EmailStr = Field(max_length=254)
+    name: str = Field(min_length=1, max_length=120)
     label: str | None = Field(default=None, max_length=80)
 
 

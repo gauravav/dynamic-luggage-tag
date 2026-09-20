@@ -6,7 +6,8 @@ and therefore no data key to seal it under.
 
 A claim solves that by carrying its own data key, wrapped by the same keyring
 that wraps a user's. Everything personal about it is sealed under that key:
-the address it was issued to, the scan token, the label. When the address
+the address it was issued to, the buyer's name, the scan token, the label.
+When the address
 registers, `materialise` turns the claim into a real tag sealed under the new
 owner's key and destroys the claim's own copy, so the same data never sits
 under two keys for longer than one transaction.
@@ -16,6 +17,13 @@ so the claim chooses the design seed and the account adopts it at registration.
 And where the address already has an account, there is no claim at all — the
 tag is created directly, under that account's existing seed, because its
 artwork is already decided.
+
+The buyer's name is part of the order for the same reason the seed is: it is
+printed on the tag, so it has to be settled before there is an account to ask.
+The invitation mailed to them carries both it and the address into
+registration, and the register endpoint takes them from the claim rather than
+from the form — the operator printed a tag for a named person at a named
+address, and the two have to stay the same person.
 """
 
 from __future__ import annotations
@@ -41,22 +49,23 @@ def issue(
     db: OrmSession,
     *,
     email: str,
+    name: str | None,
     label: str | None,
-    icon: str | None,
-    icon_color: str | None,
     config: Config,
     keyring: Keyring,
     issued_by: uuid.UUID | None,
-) -> tuple[TagClaim, str]:
-    """Creates a claim, returning it with the plaintext scan token once.
+) -> tuple[TagClaim, str, str]:
+    """Creates a claim, returning it with the scan token and invitation once.
 
-    The token is returned so the caller can render a printable tag, and is
-    never returned again — only its hash and a sealed copy are kept.
+    Both tokens are returned so the caller can render a printable tag and mail
+    an invitation, and neither is returned again — only their hashes, and a
+    sealed copy of the scan token, are kept.
     """
     claim_id = uuid.uuid4()
     dek = crypto.new_key()
     wrapped, version = keyring.wrap(dek, owner_id=claim_id)
     token = crypto.new_token(32)
+    invite = crypto.new_token(32)
     normalized = crypto.normalize_email(email)
 
     claim = TagClaim(
@@ -71,13 +80,47 @@ def issue(
         # adopts it when it registers, so the traveller still has one design.
         design_seed=_seed_for(db, config, normalized),
         label_enc=encrypt_field(dek, label, _aad(claim_id, "label")),
-        icon=icon,
-        icon_color=icon_color,
+        name_enc=encrypt_field(dek, name, _aad(claim_id, "name")),
+        invite_token_hash=_invite_hash(config, invite),
+        invite_sent_at=utcnow(),
         created_at=utcnow(),
         issued_by=issued_by,
     )
     db.add(claim)
-    return claim, token
+    return claim, token, invite
+
+
+def _invite_hash(config: Config, invite: str) -> bytes:
+    return crypto.hash_token(config.token_pepper, "tag.invite", invite)
+
+
+def reissue_invite(claim: TagClaim, *, config: Config) -> str:
+    """Mints a fresh invitation for a claim, invalidating the previous one.
+
+    An invitation that has gone astray is replaced rather than repeated: the
+    old link stops working the moment a new one is sent, so a copy sitting in
+    a forwarded mailbox cannot still be used.
+    """
+    invite = crypto.new_token(32)
+    claim.invite_token_hash = _invite_hash(config, invite)
+    claim.invite_sent_at = utcnow()
+    return invite
+
+
+def find_by_invite(db: OrmSession, invite: str, *, config: Config) -> TagClaim | None:
+    """The unclaimed claim an invitation belongs to, if it is still open.
+
+    Matched on the hash, so an invitation is never stored in a form that could
+    be read back out of the database and used.
+    """
+    if not invite:
+        return None
+    return db.scalar(
+        select(TagClaim).where(
+            TagClaim.invite_token_hash == _invite_hash(config, invite),
+            TagClaim.claimed_at.is_(None),
+        )
+    )
 
 
 def _seed_for(db: OrmSession, config: Config, normalized_email: str) -> bytes:
@@ -140,6 +183,20 @@ def seed_for_new_user(claims: list[TagClaim]) -> bytes | None:
     return bytes(claims[0].design_seed) if claims else None
 
 
+def name_for_new_user(claims: list[TagClaim], *, keyring: Keyring) -> str | None:
+    """The name a new account should take from the tag already printed for it.
+
+    The operator took the name with the order and it went to the press, so the
+    account starts out called what the tag says — whether the buyer arrived by
+    the invitation link or typed the address in themselves.
+    """
+    for claim in claims:
+        name = read(claim, "name", keyring=keyring)
+        if name:
+            return name
+    return None
+
+
 def materialise(
     db: OrmSession,
     claim: TagClaim,
@@ -188,5 +245,9 @@ def materialise(
     claim.email_enc = b""
     claim.token_enc = b""
     claim.label_enc = None
+    claim.name_enc = None
+    # The invitation has been taken up. Anyone still holding the link — it was
+    # mail, and mail gets forwarded — is holding one that no longer resolves.
+    claim.invite_token_hash = None
     claim.dek_wrapped = b"\x00" * 32
     return tag

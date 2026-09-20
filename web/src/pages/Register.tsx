@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, api } from '../api/client'
 import { MailSent } from '../components/illustrations'
 import { LuggageMole, type MoleState } from '../components/LuggageMole'
@@ -9,6 +9,10 @@ import { Field, Notice } from '../components/ui'
 import { useTurnstile } from '../lib/turnstile'
 
 export function Register() {
+  const [params] = useSearchParams()
+  // An invitation from a tag that has already been printed and posted.
+  const invite = params.get('invite')
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -17,6 +21,38 @@ export function Register() {
   const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
   const turnstile = useTurnstile('register')
+
+  // Whether the two fields the invitation settles are still ours to fill in.
+  // They are locked once it resolves, and freed again if it does not: a link
+  // that has expired should leave someone able to sign up, not stranded.
+  const [invited, setInvited] = useState<boolean>(false)
+  const [checking, setChecking] = useState<boolean>(Boolean(invite))
+
+  useEffect(() => {
+    if (!invite) return
+    let cancelled = false
+    void api
+      .get<{ invitation: { email: string; name: string | null } }>(`/auth/invite/${invite}`)
+      .then(({ invitation }) => {
+        if (cancelled) return
+        setEmail(invitation.email)
+        setName(invitation.name ?? '')
+        setInvited(true)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setMessage(
+          'That invitation link is no longer valid. You can still create your account here — ' +
+            'use the address the tag was ordered for and it will be waiting inside.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [invite])
 
   const [focused, setFocused] = useState<'email' | 'name' | 'password' | null>(null)
   const [showPassword, setShowPassword] = useState(false)
@@ -41,7 +77,15 @@ export function Register() {
     try {
       await api.post(
         '/auth/register',
-        { email, password, name: name || null },
+        {
+          email,
+          password,
+          name: name || null,
+          // Present only when it resolved. The server reads the address and
+          // the name off the invitation and ignores the two sent here, which
+          // is what makes them unchangeable rather than merely uneditable.
+          ...(invited && invite ? { invite_token: invite } : {}),
+        },
         { turnstileToken: turnstile.token },
       )
       // The same screen appears whether or not the address was already
@@ -91,11 +135,14 @@ export function Register() {
 
   return (
     <div className="page wrap wrap--narrow">
-      <p className="kicker">create an account</p>
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>One design, every bag.</h1>
+      <p className="kicker">{invited ? 'your tag is on its way' : 'create an account'}</p>
+      <h1 style={{ fontSize: 28, marginBottom: 8 }}>
+        {invited ? 'Set up your tag.' : 'One design, every bag.'}
+      </h1>
       <p className="muted" style={{ marginBottom: 14 }}>
-        Your name and contact details are encrypted before they are stored, and stay hidden until
-        you mark a bag lost.
+        {invited
+          ? 'Your tag is already printed, so the address and the name on it are set. Choose a password and it will be waiting in your account.'
+          : 'Your name and contact details are encrypted before they are stored, and stay hidden until you mark a bag lost.'}
       </p>
 
       <LuggageMole state={mole} gaze={gaze} className="mole mole--signin" />
@@ -124,6 +171,8 @@ export function Register() {
           error={errors.email}
           autoComplete="email"
           required
+          disabled={invited || checking}
+          hint={invited ? 'The address your tag was ordered for.' : undefined}
         />
         <Field
           label="Name"
@@ -133,8 +182,13 @@ export function Register() {
           onFocus={() => setFocused('name')}
           onBlur={() => setFocused(null)}
           error={errors.name}
-          hint="Shown to a finder only when you report a bag lost. You can add it later."
+          hint={
+            invited
+              ? 'The name printed on your tag. It is shown to a finder only when you report a bag lost.'
+              : 'Shown to a finder only when you report a bag lost. You can add it later.'
+          }
           autoComplete="name"
+          disabled={invited || checking}
         />
         <PasswordField
           name="password"
@@ -152,7 +206,7 @@ export function Register() {
         <button
           type="submit"
           className="btn btn--primary btn--block"
-          disabled={busy || !turnstile.ready}
+          disabled={busy || checking || !turnstile.ready}
         >
           <BusyLabel busy={busy} idle="Create account" working="Creating…" />
         </button>
